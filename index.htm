@@ -1,1 +1,34 @@
-sdf
+<!DOCTYPE html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redirecting...</title>
+    <script defer>
+		let redirects = {
+			"ha": "https://docs.juce.com/master/index.html",
+			"jc?": "https://docs.juce.com/master/class{searchTerms}.html",
+		};
+
+        window.onload = function () {
+            let params = new URLSearchParams(window.location.search);
+            let tokens = params.get("key").split("?");
+
+			let key = tokens[0];
+			if (1 == tokens.length) {
+				let url = redirects[key];
+				if (url) {
+					window.location.replace(url);
+				}
+			} else {
+				key += "?";
+				let searchString = tokens[1];
+				let url = redirects[key];
+				if (url) {
+					url = url.replace("{searchTerms}", searchString);
+					window.location.replace(url);
+				}
+			}
+        };
+    </script>
+</head>
+</html>
