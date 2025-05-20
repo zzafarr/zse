@@ -5,11 +5,6 @@
     <title>Redirecting...</title>
     <script defer>
 		let redirects = {
-			"ha": "http://192.168.3.3:8123/",
-			"hal": "http://192.168.3.3:8123/",
-			"har": "https://wqk88ecoaorww4r2ot9ecsl3fjole1tm.ui.nabu.casa/",
-            "hass":"http://192.168.3.3:8123",
-            "nabu":"https://wqk88ecoaorww4r2ot9ecsl3fjole1tm.ui.nabu.casa",
 
             "unifi":"https://192.168.1.1/network/",
             "cbb":"https://nas:5800/",
@@ -48,4 +43,233 @@
         };
     </script>
 </head>
+</html>
+
+----
+
+<!DOCTYPE html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redirect Links</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+        }
+        .redirect-message {
+            background-color: #ffe7ba;
+            border-left: 4px solid #ff8c00;
+            padding: 12px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            padding: 6px 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+    </style>
+    <script defer>
+        let redirects = {
+            "Srum": {
+                type: "separator"
+            },
+
+    	    "ha": {
+                url: "http://192.168.3.3:8123/",
+                description: "home assistant local"
+            },
+    	    "hass": {
+                url: "http://192.168.3.3:8123/",
+                description: "home assistant local"
+            },
+    	    "hal": {
+                url: "http://192.168.3.3:8123/",
+                description: "home assistant local"
+            },
+    	    "har": {
+                url: "https://wqk88ecoaorww4r2ot9ecsl3fjole1tm.ui.nabu.casa/",
+                description: "home assistant Nabucasa"
+            },
+    	    "nabu": {
+                url: "https://wqk88ecoaorww4r2ot9ecsl3fjole1tm.ui.nabu.casa/",
+                description: "home assistant Nabucasa"
+            },
+		
+            "BI": {
+                type: "separator"
+            },
+    	    "bi": {
+                url: "http://192.168.2.2:81",
+                description: "Blue Iris - NVR"
+            },
+    	    "bilan": {
+                url: "http://192.168.1.22:81",
+                description: "Blue Iris - NVR"
+            },
+
+
+	    "Network": {
+                type: "separator"
+            },
+   	    "unifi": {
+                url: "https://192.168.1.1/network/",
+                description: "Unifi Controller"
+            },
+  	    "cbb": {
+                url: "https://nas:5800/",
+                description: "NAS Cloudberry Backup"
+            },
+	   "deluge": {
+                url: "http://nas:8112/",
+                description: "NAS Deluge Tor"
+            },
+
+
+	    "Tasks": {
+                type: "separator"
+            },
+   	    "tt": {
+                url: "https://ticktick.com/webapp/#p/inbox/tasks",
+                description: "Tick Tick"
+            },
+   	    "todo": {
+                url: "https://to-do.live.com/tasks/important",
+                description: "Microsoft To-Do"
+            },
+		
+            "zse": {
+                url: "https://github.com/zzafarr/zse/edit/main/index.htm",
+                description: "Zack Chrome Redirect Search Engine."
+            },
+
+
+            
+        };
+
+        window.onload = function () {
+            const tableBody = document.getElementById('redirectsTable');
+            
+            // Use the keys in their original order
+            const keys = Object.keys(redirects);
+            
+            // Create table rows
+            keys.forEach(key => {
+                const redirect = redirects[key];
+                
+                if (redirect.type === "separator") {
+                    // Create separator row
+                    const separatorRow = document.createElement('tr');
+                    separatorRow.className = 'separator-row';
+                    
+                    const separatorCell = document.createElement('td');
+                    separatorCell.colSpan = 2;
+                    separatorCell.textContent = key;
+                    separatorCell.style.fontWeight = 'bold';
+                    separatorCell.style.padding = '8px';
+                    separatorCell.style.backgroundColor = '#f5f5f5';
+                    separatorCell.style.borderTop = '2px solid #ddd';
+                    separatorCell.style.borderBottom = '2px solid #ddd';
+                    
+                    separatorRow.appendChild(separatorCell);
+                    tableBody.appendChild(separatorRow);
+                } else {
+                    // Create regular row
+                    const row = document.createElement('tr');
+                    
+                    // Key column
+                    const keyCell = document.createElement('td');
+                    keyCell.textContent = key;
+                    row.appendChild(keyCell);
+                    
+                    // URL and Description column
+                    const urlCell = document.createElement('td');
+                    
+                    // Add description first
+                    const descSpan = document.createElement('span');
+                    descSpan.textContent = redirect.description;
+                    descSpan.style.color = '#666';
+                    descSpan.style.fontSize = '0.9em';
+                    urlCell.appendChild(descSpan);
+                    
+                    // Add line break and link
+                    urlCell.appendChild(document.createElement('br'));
+                    const link = document.createElement('a');
+                    link.href = redirect.url;
+                    link.textContent = redirect.url;
+                    link.target = '_blank'; // Open in new tab
+                    link.style.fontSize = '0.85em';
+                    urlCell.appendChild(link);
+                    
+                    row.appendChild(urlCell);
+                    tableBody.appendChild(row);
+                }
+            });
+
+            // Check if there's a redirect request
+            const params = new URLSearchParams(window.location.search);
+            const keyParam = params.get("key");
+            
+            if (keyParam) {
+                let tokens = keyParam.split("?");
+                let key = tokens[0];
+                
+                if (tokens.length === 1) {
+                    let url = redirects[key]?.url;
+                    if (url) {
+                        const messageDiv = document.getElementById('redirectMessage');
+                        const targetSpan = document.getElementById('redirectTarget');
+                        messageDiv.style.display = 'block';
+                        targetSpan.textContent = redirects[key].description;
+                        setTimeout(() => {
+                            window.location.replace(url);
+                        }, 1000);
+                    }
+                } else {
+                    key += "?";
+                    let searchString = tokens[1];
+                    let url = redirects[key]?.url;
+                    if (url) {
+                        url = url.replace("{searchTerms}", searchString);
+                        const messageDiv = document.getElementById('redirectMessage');
+                        const targetSpan = document.getElementById('redirectTarget');
+                        messageDiv.style.display = 'block';
+                        targetSpan.textContent = redirects[key].description;
+                        setTimeout(() => {
+                            window.location.replace(url);
+                        }, 1000);
+                    }
+                }
+            }
+        };
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div id="redirectMessage" class="redirect-message">
+            Redirecting to <span id="redirectTarget"></span>...
+        </div>
+        <h1>Available Redirects</h1>
+        <table>
+            <tbody id="redirectsTable">
+            </tbody>
+        </table>
+    </div>
+</body>
 </html>
