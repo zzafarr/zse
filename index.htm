@@ -2,55 +2,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Redirecting...</title>
-    <script defer>
-		let redirects = {
-
-            "unifi":"https://192.168.1.1/network/",
-            "cbb":"https://nas:5800/",
-            "deluge":"http://nas:8112/",
-            
-            "br":"https://www.bankrate.com/mortgages/mortgage-rates/?mortgageType=Refinance&partnerId=br3&pid=br3&pointsChanged=false&refinanceCashOutAmount=0&refinanceLoanAmount=1000000&refinanceLoanTerms=30yr%2C5-1arm%2C5-6arm&refinancePoints=All&refinancePropertyType=SingleFamily&refinancePropertyUse=PrimaryResidence&refinancePropertyValue=2000000&searchChanged=false&ttcid&userCreditScore=780&userDebtToIncomeRatio=0&userFha=false&userVeteranStatus=NoMilitaryService&zipCode=98121",
-            
-            "bi":"http://192.168.2.2:81",
-            "bilan":"http://192.168.1.22:81",
-            
-            "tt":"https://ticktick.com/webapp/#p/inbox/tasks",
-            "todo":"https://to-do.live.com/tasks/important",
-
-			//"jc?": "https://docs.juce.com/master/class{searchTerms}.html",
-		};
-
-        window.onload = function () {
-            let params = new URLSearchParams(window.location.search);
-            let tokens = params.get("key").split("?");
-
-			let key = tokens[0];
-			if (1 == tokens.length) {
-				let url = redirects[key];
-				if (url) {
-					window.location.replace(url);
-				}
-			} else {
-				key += "?";
-				let searchString = tokens[1];
-				let url = redirects[key];
-				if (url) {
-					url = url.replace("{searchTerms}", searchString);
-					window.location.replace(url);
-				}
-			}
-        };
-    </script>
-</head>
-</html>
-
-----
-
-<!DOCTYPE html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Redirect Links</title>
     <style>
         body {
