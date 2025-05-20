@@ -14,6 +14,14 @@
             margin-bottom: 20px;
             display: none;
         }
+        .no-match-message {
+            background-color: #ffaaaa;
+            border-left: 4px solid #ff8c00;
+            padding: 12px;
+            margin-bottom: 20px;
+            display: none;
+        }
+	    
         table {
             width: 100%;
             border-collapse: collapse;
@@ -191,7 +199,12 @@
                         setTimeout(() => {
                             window.location.replace(url);
                         }, 1000);
-                    }
+                    } else {
+                        const noMatchMessageDiv = document.getElementById('noMatchMessage');
+                        const noMatchTargetSpan = document.getElementById('noMatchTarget');
+                        noMatchMessageDiv.style.display = 'block';
+                        noMatchTargetSpan.textContent = key;
+		    }
                 } else {
                     key += "?";
                     let searchString = tokens[1];
@@ -205,6 +218,11 @@
                         setTimeout(() => {
                             window.location.replace(url);
                         }, 1000);
+                    } else {
+                        const noMatchMessageDiv = document.getElementById('noMatchMessage');
+                        const noMatchTargetSpan = document.getElementById('noMatchTarget');
+                        noMatchMessageDiv.style.display = 'block';
+                        noMatchTargetSpan.textContent = key;
                     }
                 }
             }
@@ -215,6 +233,9 @@
     <div class="container">
         <div id="redirectMessage" class="redirect-message">
             Redirecting to <span id="redirectTarget"></span>...
+        </div>
+        <div id="noMatchMessage" class="no-match-message">
+            Key Not Found <span id="noMatchTarget"></span>...
         </div>
         <h1>Available Redirects</h1>
         <table>
