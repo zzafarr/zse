@@ -235,8 +235,9 @@
             
             if (keyParam) {
                 let tokens = keyParam.split("?");
-                let key = tokens[0];
-                
+                let keyToken = tokens[0];
+                let key = Object.keys(redirects).find( (k) => k.toLowerCase() === keyToken.toLowerCase());
+				
                 if (tokens.length === 1) {
                     let url = redirects[key]?.url;
                     if (url) {
