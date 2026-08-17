@@ -21,6 +21,7 @@ const resolveRedirect = extractFn("function resolveRedirect(redirects, aliasPara
 const buildSearchUrl = extractFn("function buildSearchUrl(origin, pathname, placeholder) {");
 const buildOpenSearchXml = extractFn("function buildOpenSearchXml(shortName, origin, pathname) {");
 const opensearchStrategy = extractFn("function opensearchStrategy(origin, pinnedHost) {");
+const parseRedirects = extractFn("function parseRedirects(text) {");
 
 // Test fixture mirroring the real map's shapes: separator, plain, placeholder+raw, placeholder+encoded.
 const redirects = {
@@ -149,6 +150,59 @@ eq(pick("alias=ha"), "ha", "compat: alias present -> alias used");
 eq(pick("key=ha"), "ha", "compat: only legacy key present -> key used");
 eq(pick("alias=ha&key=gm"), "ha", "compat: alias wins when both present");
 eq(pick("foo=bar"), null, "compat: neither present -> null (no redirect)");
+
+// --- parseRedirects: pipe-delimited inline data -> redirects object ---
+const sample = [
+    "# Home Assistant",
+    "ha | http://192.168.3.3:8123/ | home assistant local",
+    "",
+    "# Other",
+    "fdm | https://freedium-mirror.cfd/{argument} | Freedium | raw",
+    "noDesc | https://x.test/",                        // description omitted -> defaults to alias
+    "  # Spaced Title  ",                              // header with surrounding whitespace
+    "bad",                                              // alias only, no url -> skipped
+    "spacey |   https://y.test/   |   Y  "             // extra whitespace around | trimmed
+].join("\n");
+const parsed = parseRedirects(sample);
+
+eq(Object.keys(parsed), ["Home Assistant", "ha", "Other", "fdm", "noDesc", "Spaced Title", "spacey"],
+   "parseRedirects: keys + order (sections inline, 'bad' skipped)");
+eq(parsed["Home Assistant"], { type: "separator" }, "parseRedirects: # line -> separator");
+eq(parsed["Spaced Title"], { type: "separator" }, "parseRedirects: header whitespace trimmed");
+eq(parsed["ha"], { url: "http://192.168.3.3:8123/", description: "home assistant local" },
+   "parseRedirects: basic record");
+eq(parsed["fdm"], { url: "https://freedium-mirror.cfd/{argument}", description: "Freedium", raw: true },
+   "parseRedirects: 4th field 'raw' -> raw:true");
+eq(parsed["noDesc"], { url: "https://x.test/", description: "noDesc" },
+   "parseRedirects: missing description defaults to alias");
+eq(parsed["spacey"], { url: "https://y.test/", description: "Y" },
+   "parseRedirects: extra whitespace around | is trimmed");
+assert(!("bad" in parsed), "parseRedirects: url-less line is skipped");
+
+// Whitespace around | is OPTIONAL: no-space and aligned-space rows parse identically.
+eq(parseRedirects("a|https://z.test/|Z")["a"],
+   parseRedirects("a   |   https://z.test/   |   Z")["a"],
+   "parseRedirects: whitespace around | optional (tight == padded)");
+
+// 'true' is also accepted as the raw flag (alias of 'raw')
+eq(parseRedirects("t | u | d | true")["t"].raw, true,
+   "parseRedirects: 'true' also sets raw");
+
+// --- The real inline #redirectData block parses and matches the shipping map's expectations ---
+const dataBlock = html.match(/<script type="text\/plain" id="redirectData">\n([\s\S]*?)<\/script>/)[1];
+const live = parseRedirects(dataBlock);
+eq(live["fdm"], { url: "https://freedium-mirror.cfd/{argument}", description: "Freedium", raw: true },
+   "live data: fdm has {argument} + raw:true");
+eq(live["ha"].url, "http://192.168.3.3:8123/", "live data: ha resolves");
+assert(live["Home Assistant"] && live["Home Assistant"].type === "separator", "live data: sections present");
+// Resolver works end-to-end against the real parsed data (raw arg substitution).
+eq(resolveRedirect(live, "fdm https://medium.com/@x/post"),
+   { status: "ok", url: "https://freedium-mirror.cfd/https://medium.com/@x/post", description: "Freedium" },
+   "live data + resolver: fdm raw substitution end-to-end");
+// Every expected alias from today's config is present.
+["sf","gm","ha","hass","hal","har","nabu","bi","bilan","unifi","cbb","deluge","tt","todo","zse",
+ "frontodoor","driveway","southgate","grill","patio","northgate","garage","amcredit","ecobee","rent","cct","fdm"
+].forEach((a) => assert(a in live, "live data: alias '" + a + "' present"));
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

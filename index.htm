@@ -53,8 +53,10 @@
             border: 1px solid #cfe0ff;
             border-radius: 6px;
             padding: 16px;
-            margin-bottom: 24px;
+            margin-top: 24px;
         }
+        /* URL box + Copy button share one line; wrap gracefully on narrow widths. */
+        .setup-url-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
         .setup h2 { margin: 0 0 8px; font-size: 1.1em; }
         .setup ol { margin: 8px 0 0; padding-left: 20px; }
         .setup code {
@@ -65,8 +67,6 @@
             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         }
         .setup-url {
-            display: inline-block;
-            margin: 4px 0;
             word-break: break-all;
         }
         .copy-btn {
@@ -79,8 +79,82 @@
             padding: 7px 14px;
         }
         .copy-btn:hover { background: #1d4ed8; }
-        .copy-status { margin-left: 10px; color: #197d19; font-size: 0.9em; }
+        .copy-status { color: #197d19; font-size: 0.9em; }
     </style>
+</head>
+<body>
+    <!-- Alias data ("|"-delimited, one record per line; "# Title" = section header). Kept at the
+         top of <body> for easy editing; parsed at load by parseRedirects() so there is no extra
+         network request. Grammar: alias | url [| description [| raw]]. Whitespace around "|" is
+         optional (trimmed) and may be used for column alignment. URLs never contain "|", so no
+         escaping is ever needed. -->
+    <script type="text/plain" id="redirectData">
+# Shortcuts
+sf         | https://seekingalpha.com/account/portfolio/summary?portfolioId=65457843          | Seeking Alpha
+
+# Searches
+gm         | https://gemini.google.com/app                                                    | Gemini Web App
+
+# Home Assistant
+ha         | http://192.168.3.3:8123/                                                         | home assistant local
+hass       | http://192.168.3.3:8123/                                                         | home assistant local
+hal        | http://192.168.3.3:8123/                                                         | home assistant local
+har        | https://wqk88ecoaorww4r2ot9ecsl3fjole1tm.ui.nabu.casa/                           | home assistant Nabucasa
+nabu       | https://wqk88ecoaorww4r2ot9ecsl3fjole1tm.ui.nabu.casa/                           | home assistant Nabucasa
+
+# BlueIris
+bi         | http://192.168.2.2:81                                                            | Blue Iris - NVR
+bilan      | http://192.168.1.22:81                                                           | Blue Iris - NVR
+
+# Network
+unifi      | https://192.168.1.1/network/                                                     | Unifi Controller
+cbb        | https://nas:5800/                                                                | NAS Cloudberry Backup
+deluge     | http://nas:8112/                                                                 | NAS Deluge Tor
+
+# Tasks
+tt         | https://ticktick.com/webapp/#p/inbox/tasks                                       | Tick Tick
+todo       | https://to-do.live.com/tasks/important                                           | Microsoft To-Do
+zse        | https://github.com/zzafarr/zse/edit/main/index.htm                               | Zack Chrome Redirect Search Engine.
+
+# Cams
+frontodoor | http://192.168.2.201/doc/page/config.asp                                         | Front Door Camera
+driveway   | http://192.168.2.202/doc/page/config.asp                                         | Driveway Camera
+southgate  | http://192.168.2.203/                                                            | South gate Camera
+grill      | https://192.168.2.204/                                                           | Grill Camera
+patio      | http://192.168.2.205/doc/page/config.asp                                         | Patio Camera
+northgate  | http://192.168.2.206/                                                            | North Gate Camera
+garage     | https://192.168.2.210/#/quality                                                  | Garage Camera
+
+# Other
+amcredit   | https://www.amazon.com/norushcredits                                             | Amazon Credit
+ecobee     | https://app.beestat.io/                                                          | Ecobee stats
+rent       | https://www.zillow.com/rental-manager/properties/1ekexu75m5y5a/dashboard/overview | Zillow Rental
+cct        | https://anthropic.skilljar.com/claude-code-in-action                             | Claude Code Training
+fdm        | https://freedium-mirror.cfd/{argument}                                           | Freedium | raw
+</script>
+    <div class="container">
+        <div id="redirectMessage" class="redirect-message">
+            <span id="redirectLabel">Redirecting to </span><span id="redirectTarget"></span>...
+        </div>
+        <div id="noMatchMessage" class="no-match-message">
+            Alias Not Found <span id="noMatchTarget"></span>
+        </div>
+        <h1>Available Redirects</h1>
+        <table>
+            <tbody id="redirectsTable">
+            </tbody>
+        </table>
+        <div class="setup">
+            <h2>Use this as a Chrome search engine</h2>
+            <p class="setup-url-line">Search URL for this site (auto-detected):
+                <code class="setup-url" id="setupUrl"></code><button class="copy-btn" id="copyBtn" type="button">Copy search URL</button><span class="copy-status" id="copyStatus"></span></p>
+            <ol>
+                <li>Chrome may already list <strong id="setupName">this site</strong> under Settings &rarr; Search engines (auto-discovered). If so, just set its keyword.</li>
+                <li>Otherwise: Settings &rarr; Search engines &rarr; Manage &rarr; <strong>Add</strong>. Paste the copied URL into the "URL with %s" field, pick a name and a shortcut keyword (e.g. <code>@</code>).</li>
+                <li>Then type your keyword + <kbd>Tab</kbd> + an alias (e.g. <code>ha</code>) in the address bar.</li>
+            </ol>
+        </div>
+    </div>
     <script>
         // Pure resolver: maps the raw ?alias= param value to a redirect descriptor.
         // No DOM/navigation side effects, so it is unit-testable (see tests/resolve.test.js).
@@ -183,160 +257,52 @@
             return URL.createObjectURL(new Blob([xml], { type: "application/opensearchdescription+xml" }));
         }
 
-        if (typeof module !== "undefined" && module.exports) {
-            module.exports = { resolveRedirect, buildSearchUrl, buildOpenSearchXml, opensearchStrategy };
+        // Parse the inline pipe-delimited redirect data (from the #redirectData block) into the
+        // `redirects` object the rest of the app uses. "|"-delimited (not comma) so URLs never need
+        // escaping — "|" doesn't appear in URLs. Insertion order is preserved (drives table + lookup).
+        //
+        // Line grammar (whitespace around each "|" is optional — trimmed away, so it can be used for
+        // column alignment; blank lines ignored):
+        //   "# Section Title"                          -> separator row { type: "separator" } (key = title)
+        //   "alias | url [| description [| raw]]"       -> { url, description, raw? }
+        // The 4th field, if present and equal to "raw" or "true" (case-insensitive), sets raw:true
+        // (argument inserted verbatim). Missing description defaults to the alias. A record line with
+        // no "|" (alias only, no url) is skipped as malformed rather than creating a url-less entry.
+        function parseRedirects(text) {
+            const redirects = {};
+            const lines = text.split("\n");
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                if (line.trim() === "") { continue; }              // blank -> skip
+                if (line.trim().charAt(0) === "#") {                // "# Title" -> separator
+                    redirects[line.trim().slice(1).trim()] = { type: "separator" };
+                    continue;
+                }
+                const fields = line.split("|").map((f) => f.trim());  // optional whitespace around | is trimmed
+                const alias = fields[0];
+                const url = fields[1];
+                if (!alias || !url) { continue; }                  // need at least alias + url
+                const entry = { url: url, description: fields[2] || alias };
+                const rawFlag = (fields[3] || "").toLowerCase();
+                if (rawFlag === "raw" || rawFlag === "true") { entry.raw = true; }
+                redirects[alias] = entry;
+            }
+            return redirects;
         }
 
-        let redirects = {
-            "Shortcuts": {
-                type: "separator"
-            },
-    	    "sf": {
-                url: "https://seekingalpha.com/account/portfolio/summary?portfolioId=65457843",
-                description: "Seaking Alpha"
-            },
+        if (typeof module !== "undefined" && module.exports) {
+            module.exports = { resolveRedirect, buildSearchUrl, buildOpenSearchXml, opensearchStrategy, parseRedirects };
+        }
 
-			"Searches": {
-                type: "separator"
-            },
-    	    "gm": {
-                url: "https://gemini.google.com/app",
-                description: "Gemini Web App"
-            },
-			
-			"Home Assistant": {
-                type: "separator"
-            },
-
-    	    "ha": {
-                url: "http://192.168.3.3:8123/",
-                description: "home assistant local"
-            },
-    	    "hass": {
-                url: "http://192.168.3.3:8123/",
-                description: "home assistant local"
-            },
-    	    "hal": {
-                url: "http://192.168.3.3:8123/",
-                description: "home assistant local"
-            },
-    	    "har": {
-                url: "https://wqk88ecoaorww4r2ot9ecsl3fjole1tm.ui.nabu.casa/",
-                description: "home assistant Nabucasa"
-            },
-    	    "nabu": {
-                url: "https://wqk88ecoaorww4r2ot9ecsl3fjole1tm.ui.nabu.casa/",
-                description: "home assistant Nabucasa"
-            },
-		
-            "BlueIris": {
-                type: "separator"
-            },
-    	    "bi": {
-                url: "http://192.168.2.2:81",
-                description: "Blue Iris - NVR"
-            },
-    	    "bilan": {
-                url: "http://192.168.1.22:81",
-                description: "Blue Iris - NVR"
-            },
-
-
-	    "Network": {
-                type: "separator"
-            },
-   	    "unifi": {
-                url: "https://192.168.1.1/network/",
-                description: "Unifi Controller"
-            },
-  	    "cbb": {
-                url: "https://nas:5800/",
-                description: "NAS Cloudberry Backup"
-            },
-	   "deluge": {
-                url: "http://nas:8112/",
-                description: "NAS Deluge Tor"
-            },
-
-
-	    "Tasks": {
-                type: "separator"
-            },
-   	    "tt": {
-                url: "https://ticktick.com/webapp/#p/inbox/tasks",
-                description: "Tick Tick"
-            },
-   	    "todo": {
-                url: "https://to-do.live.com/tasks/important",
-                description: "Microsoft To-Do"
-            },
-		
-            "zse": {
-                url: "https://github.com/zzafarr/zse/edit/main/index.htm",
-                description: "Zack Chrome Redirect Search Engine."
-            },
-
-	    "Cams": {
-                type: "separator"
-            },
-   	    "frontodoor": {
-                url: "http://192.168.2.201/doc/page/config.asp",
-                description: "Front Door Camera"
-            },
-   	    "driveway": {
-                url: "http://192.168.2.202/doc/page/config.asp",
-                description: "Driveway Camera"
-            },
-   	    "southgate": {
-                url: "http://192.168.2.203/",
-                description: "South gate Camera"
-            },
-   	    "grill": {
-                url: "https://192.168.2.204/",
-                description: "Grill Camera"
-            },
-   	    "patio": {
-                url: "http://192.168.2.205/doc/page/config.asp",
-                description: "Patio Camera"
-            },
-   	    "northgate": {
-                url: "http://192.168.2.206/",
-                description: "North Gate Camera"
-            },
-   	    "garage": {
-                url: "https://192.168.2.210/#/quality",
-                description: "Garage Camera"
-            },
-
-		
-	    "Other": {
-                type: "separator"
-            },
-   	    "amcredit": {
-                url: "https://www.amazon.com/norushcredits",
-                description: "Amazon Credit"
-            },
-   	    "ecobee": {
-                url: "https://app.beestat.io/",
-                description: "Ecobee stats"
-            },
-		"rent": {
-			url: "https://www.zillow.com/rental-manager/properties/1ekexu75m5y5a/dashboard/overview",
-			description: "Zillow Rental"
-		},
-		"cct": {
-			url: "https://anthropic.skilljar.com/claude-code-in-action",
-			description: "Claude Code Training"
-		},
-		"fdm": {
-			url: "https://freedium-mirror.cfd/{argument}",
-			raw: true,
-			description: "Freedium"
-		}
-			
-        };
+        // Aliases live in the inline #redirectData block at the top of <body> ("|"-delimited, easy
+        // to hand-edit). Parsed once at load; no extra network request, so caching/perf are unchanged.
+        let redirects = {};
 
         window.onload = function () {
+            // Load aliases from the inline "|"-delimited block (top of <body>).
+            const dataEl = document.getElementById('redirectData');
+            redirects = parseRedirects(dataEl ? dataEl.textContent : "");
+
             // --- Setup panel: auto-detect this deployment's host so forks work with zero config ---
             const engineName = "zse";
             const manualUrl = buildSearchUrl(window.location.origin, window.location.pathname, "%s");
@@ -469,32 +435,5 @@
             }
         };
     </script>
-</head>
-<body>
-    <div class="container">
-        <div id="redirectMessage" class="redirect-message">
-            <span id="redirectLabel">Redirecting to </span><span id="redirectTarget"></span>...
-        </div>
-        <div id="noMatchMessage" class="no-match-message">
-            Alias Not Found <span id="noMatchTarget"></span>
-        </div>
-        <div class="setup">
-            <h2>Use this as a Chrome search engine</h2>
-            <p>Search URL for this site (auto-detected):
-                <br><code class="setup-url" id="setupUrl"></code></p>
-            <button class="copy-btn" id="copyBtn" type="button">Copy search URL</button>
-            <span class="copy-status" id="copyStatus"></span>
-            <ol>
-                <li>Chrome may already list <strong id="setupName">this site</strong> under Settings &rarr; Search engines (auto-discovered). If so, just set its keyword.</li>
-                <li>Otherwise: Settings &rarr; Search engines &rarr; Manage &rarr; <strong>Add</strong>. Paste the copied URL into the "URL with %s" field, pick a name and a shortcut keyword (e.g. <code>@</code>).</li>
-                <li>Then type your keyword + <kbd>Tab</kbd> + an alias (e.g. <code>ha</code>) in the address bar.</li>
-            </ol>
-        </div>
-        <h1>Available Redirects</h1>
-        <table>
-            <tbody id="redirectsTable">
-            </tbody>
-        </table>
-    </div>
 </body>
 </html>

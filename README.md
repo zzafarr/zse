@@ -16,7 +16,7 @@ Visiting the page with no `?alias=` shows a browsable table of every alias plus 
 
 1. **Fork** this repo to your account.
 2. **Enable GitHub Pages:** repo → Settings → Pages → Source = `main` branch, root. Your site publishes at `https://<you>.github.io/<repo>/`.
-3. **Edit `index.htm`** — replace the entries in the `redirects` map with your own aliases (see below).
+3. **Edit `index.htm`** — replace the entries in the `#redirectData` block with your own aliases (see below).
 4. **Open your published page.** The blue setup panel at the top auto-detects your host and shows your exact search URL.
 
 ## Register it in Chrome
@@ -34,29 +34,30 @@ Address bar → type your keyword (`@`) → **Tab** → alias (+ optional argume
 
 ## Configuring aliases
 
-Each entry in the `redirects` object maps an **alias** to a target. Order = table order. Section headers are `{ type: "separator" }`.
+Aliases live in the **`<script type="text/plain" id="redirectData">`** block near the top of the source (just inside `<body>`, so it's the first thing you reach when editing) — a simple **`|`-delimited** list, parsed at load. One record per line; order = table order.
 
-```js
-let redirects = {
-    "My Stuff": { type: "separator" },          // section header row
-
-    "ha": {                                       // plain alias
-        url: "http://192.168.3.3:8123/",
-        description: "home assistant local"
-    },
-
-    "g": {                                        // alias with an argument (encoded)
-        url: "https://www.google.com/search?q={argument}",
-        description: "Google search"
-    },
-
-    "fdm": {                                      // argument inserted RAW (nested URL)
-        url: "https://freedium-mirror.cfd/{argument}",
-        raw: true,
-        description: "Freedium"
-    }
-};
 ```
+alias | url [| description [| raw]]
+```
+
+- **`# Section Title`** on its own line = a section header row (also works as a comment).
+- **Fields are separated by `|`.** `|` never appears in URLs, so you never have to quote or escape anything (unlike CSV with commas).
+- **Whitespace around `|` is optional** — it's trimmed, so `ha | url` and `ha|url` are equivalent. Pad it out to align columns if you like.
+- **Description** is optional (defaults to the alias). **4th field `raw`** (or `true`) inserts the argument verbatim — see below.
+- Blank lines are ignored.
+
+Example (whitespace around `|` is just for readability):
+
+```
+# Home Assistant
+ha  | http://192.168.3.3:8123/                    | home assistant local
+
+# Other
+g   | https://www.google.com/search?q={argument}  | Google search
+fdm | https://freedium-mirror.cfd/{argument}       | Freedium | raw
+```
+
+> It's parsed inline (no separate file to fetch), so adding an alias doesn't change load time or caching.
 
 ### Arguments
 
@@ -93,7 +94,7 @@ The page is tiny and static, so it caches well. A few realities on **GitHub Page
 
 ## Tests
 
-Pure logic (`resolveRedirect`, `buildSearchUrl`, `buildOpenSearchXml`, `opensearchStrategy`) is unit-tested. The tests extract the functions straight from `index.htm`, so there's no separate copy to drift.
+Pure logic (`resolveRedirect`, `parseRedirects`, `buildSearchUrl`, `buildOpenSearchXml`, `opensearchStrategy`) is unit-tested — including that the real inline `#redirectData` block parses correctly and resolves end-to-end. The tests extract the functions straight from `index.htm`, so there's no separate copy to drift.
 
 ```
 node tests/resolve.test.js
