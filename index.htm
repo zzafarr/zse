@@ -24,11 +24,8 @@ sf         | https://seekingalpha.com/symbol/{argument}                         
 gm         | https://gemini.google.com/app                                                    | Gemini Web App
 
 # Home Assistant
-ha         | http://192.168.3.3:8123/                                                         | home assistant local
-hass       | http://192.168.3.3:8123/                                                         | home assistant local
-hal        | http://192.168.3.3:8123/                                                         | home assistant local
-har        | https://wqk88ecoaorww4r2ot9ecsl3fjole1tm.ui.nabu.casa/                           | home assistant Nabucasa
-nabu       | https://wqk88ecoaorww4r2ot9ecsl3fjole1tm.ui.nabu.casa/                           | home assistant Nabucasa
+ha,hass,hal | http://192.168.3.3:8123/                                                        | home assistant local
+har,nabu    | https://wqk88ecoaorww4r2ot9ecsl3fjole1tm.ui.nabu.casa/                          | home assistant Nabucasa
 
 # BlueIris
 bi         | http://192.168.2.2:81                                                            | Blue Iris - NVR
@@ -460,11 +457,19 @@ fdm        | https://freedium-mirror.cfd/{argument}                             
         //
         // Line grammar (whitespace around each "|" is optional — trimmed, so it can align columns;
         // blank lines ignored):
-        //   "# Section Title"                     -> separator row (title used as the header text)
-        //   "alias | url [| description [| raw]]" -> entry row
+        //   "# Section Title"                          -> separator row (title used as the header text)
+        //   "alias[,alias2,...] | url [| desc [| raw]]" -> entry row(s)
         // The 4th field, if present and equal to "raw" or "true" (case-insensitive), sets raw:true
-        // (argument inserted verbatim). Missing description defaults to the alias. A record line with
-        // no "|" (alias only, no url) is skipped as malformed.
+        // (argument inserted verbatim). Missing description defaults to the FIRST alias in the list. A
+        // record line with no "|" (alias only, no url) is skipped as malformed.
+        //
+        // COMMA-LIST aliases: field 0 may be a comma-separated list ("ha,hass,hal") — pure shorthand
+        // for authoring N separate rows that share one url/description/raw. Each alias is expanded to
+        // its own `rows` entry AND its own resolution-map fold, so dedup/conflict behave EXACTLY as if
+        // the rows were written on separate lines (comma expansion adds no new resolution rules). The
+        // url's {argument}/raw applies to every alias in the list. Whitespace around each comma is
+        // trimmed; empty items (e.g. from "ha,,hass" or a trailing comma) are skipped; a line whose
+        // list is entirely empty is malformed and skipped.
         function parseRedirects(text) {
             const rows = [];
             const aliases = {};
@@ -477,34 +482,92 @@ fdm        | https://freedium-mirror.cfd/{argument}                             
                     continue;
                 }
                 const fields = line.split("|").map((f) => f.trim());  // optional whitespace around | is trimmed
-                const alias = fields[0];
+                // Field 0 may be a comma-list ("ha,hass,hal"): expand to individual aliases, each
+                // sharing this line's url/description/raw. Empty items (stray/trailing commas) dropped.
+                const aliasList = fields[0].split(",").map((a) => a.trim()).filter((a) => a !== "");
                 const url = fields[1];
-                if (!alias || !url) { continue; }                  // need at least alias + url
-                const entry = { url: url, description: fields[2] || alias };
+                if (aliasList.length === 0 || !url) { continue; }  // need at least one alias + url
+                const description = fields[2] || aliasList[0];     // default desc = first alias in the list
                 const rawFlag = (fields[3] || "").toLowerCase();
-                if (rawFlag === "raw" || rawFlag === "true") { entry.raw = true; }
-                rows.push({ type: "entry", alias: alias, url: url, description: entry.description, raw: entry.raw === true });
-
-                // Fold into the resolution map. Slot = "arg" if url has {argument}, else "plain".
-                const key = alias.toLowerCase();
+                const isRaw = rawFlag === "raw" || rawFlag === "true";
+                // Slot = "arg" if url has {argument}, else "plain" — same for every alias on this line.
                 const slot = url.indexOf("{argument}") !== -1 ? "arg" : "plain";
-                if (!aliases[key]) {
-                    aliases[key] = { display: alias, variants: {}, conflict: { plain: false, arg: false }, urls: { plain: [], arg: [] } };
-                }
-                const bucket = aliases[key];
-                if (bucket.urls[slot].indexOf(url) === -1) { bucket.urls[slot].push(url); }
-                if (!bucket.variants[slot]) {
-                    bucket.variants[slot] = entry;                 // first row for this slot wins (its description)
-                } else if (bucket.variants[slot].url !== url) {
-                    bucket.conflict[slot] = true;                  // different url, same slot -> conflict
-                }
-                // else: identical url, same slot -> duplicate, ignored (first already stored)
+
+                // Expand: one `rows` entry + one resolution-map fold per alias, exactly as if each were
+                // authored on its own line (so dedup/conflict rules are unchanged by comma expansion).
+                aliasList.forEach((alias) => {
+                    const entry = { url: url, description: description };
+                    if (isRaw) { entry.raw = true; }
+                    rows.push({ type: "entry", alias: alias, url: url, description: description, raw: isRaw });
+
+                    const key = alias.toLowerCase();
+                    if (!aliases[key]) {
+                        aliases[key] = { display: alias, variants: {}, conflict: { plain: false, arg: false }, urls: { plain: [], arg: [] } };
+                    }
+                    const bucket = aliases[key];
+                    if (bucket.urls[slot].indexOf(url) === -1) { bucket.urls[slot].push(url); }
+                    if (!bucket.variants[slot]) {
+                        bucket.variants[slot] = entry;             // first row for this slot wins (its description)
+                    } else if (bucket.variants[slot].url !== url) {
+                        bucket.conflict[slot] = true;              // different url, same slot -> conflict
+                    }
+                    // else: identical url, same slot -> duplicate, ignored (first already stored)
+                });
             }
             return { rows: rows, aliases: aliases };
         }
 
+        // Collapse the flat `rows` list (from parseRedirects) into the ORDERED display groups the table
+        // renders — one row per group. Pure (no DOM), so it is unit-testable (see tests/resolve.test.js).
+        //
+        // Merge rule: consecutive OR non-consecutive entry rows WITHIN THE SAME SECTION that share the
+        // SAME url AND SAME description collapse into ONE group, with their aliases joined ("ha, hass,
+        // hal"). This collapses both comma-authored lines (which parseRedirects already expanded to N
+        // rows) and hand-authored duplicate lines (ha / hass / hal on separate lines) into a single
+        // display row. A section separator anchors grouping: a merged group never spans a "# Title"
+        // divider, so identical url+desc in two different sections stay two rows.
+        //
+        // A CONFLICTED row (its (alias, slot) maps to >1 url — see parseRedirects) is NEVER merged: it
+        // becomes its own single-alias group so it can be highlighted red individually while editing.
+        // Conflict is looked up in `aliases` (parseRedirects().aliases), the same map the resolver uses.
+        //
+        // Returns an ordered array of:
+        //   { type: "separator", title }
+        //   { type: "entry", aliases: [..], url, description, raw, conflict }   // aliases: 1+ merged
+        function groupRowsForDisplay(rows, aliases) {
+            const groups = [];
+            let index = {};                                        // (url \n description) -> group, current section only
+            const isConflicted = (row) => {
+                const bucket = aliases[row.alias.toLowerCase()];
+                const slot = row.url.indexOf("{argument}") !== -1 ? "arg" : "plain";
+                return !!(bucket && bucket.conflict[slot]);
+            };
+            rows.forEach((row) => {
+                if (row.type === "separator") {
+                    groups.push({ type: "separator", title: row.title });
+                    index = {};                                    // section boundary: start merging fresh
+                    return;
+                }
+                // Conflicted rows are never merged — emit as their own group and don't index them.
+                if (isConflicted(row)) {
+                    groups.push({ type: "entry", aliases: [row.alias], url: row.url, description: row.description, raw: row.raw, conflict: true });
+                    return;
+                }
+                const mergeKey = row.url + "\n" + row.description;
+                const existing = index[mergeKey];
+                if (existing) {
+                    existing.aliases.push(row.alias);              // fold into the first matching group
+                } else {
+                    const group = { type: "entry", aliases: [row.alias], url: row.url, description: row.description, raw: row.raw, conflict: false };
+                    groups.push(group);
+                    index[mergeKey] = group;
+                }
+            });
+            return groups;
+        }
+
         if (typeof module !== "undefined" && module.exports) {
-            module.exports = { resolveRedirect, buildSearchUrl, buildOpenSearchXml, opensearchStrategy, parseRedirects };
+            module.exports = { resolveRedirect, buildSearchUrl, buildOpenSearchXml, opensearchStrategy, parseRedirects, groupRowsForDisplay };
         }
 
         // Aliases live in the inline #redirectData block near the top of <body> ("|"-delimited, easy
@@ -558,72 +621,57 @@ fdm        | https://freedium-mirror.cfd/{argument}                             
 
             const tableBody = document.getElementById('redirectsTable');
 
-            // Render every authored row in order (including exact duplicates — they're shown as-is and
-            // only ignored at resolve time). Three columns: alias (tinted gutter) | description | url.
-            // A row whose (alias, slot) is in conflict (same slot defined twice with different urls) is
-            // highlighted red so config errors are visible while editing. Long descriptions/urls are
-            // single-line ellipsized (CSS); the full text is exposed via a title tooltip.
-            rows.forEach(rowData => {
-                if (rowData.type === "separator") {
+            // Collapse authored rows into display GROUPS (groupRowsForDisplay): entries sharing the same
+            // url+description within a section merge into ONE row with their aliases joined ("ha, hass,
+            // hal"). Three columns: alias (tinted gutter) | description | url. A group whose (alias,
+            // slot) is in conflict (same slot defined twice with different urls) is NOT merged and is
+            // highlighted red so config errors stay individually visible while editing. Long
+            // descriptions/urls are single-line ellipsized (CSS); the full text is exposed via a title.
+            const displayGroups = groupRowsForDisplay(rows, aliases);
+            displayGroups.forEach(group => {
+                if (group.type === "separator") {
                     // Full-width section divider spanning all three columns.
                     const sectionRow = document.createElement('tr');
                     sectionRow.className = 'section-row';
                     const sectionCell = document.createElement('td');
                     sectionCell.colSpan = 3;
-                    sectionCell.textContent = rowData.title;
+                    sectionCell.textContent = group.title;
                     sectionRow.appendChild(sectionCell);
                     tableBody.appendChild(sectionRow);
                     return;
                 }
 
                 const row = document.createElement('tr');
-                row.className = 'data-row';
+                row.className = group.conflict ? 'data-row conflict-row' : 'data-row';
 
-                // Flag conflicted rows red: look up this row's slot in the resolution map.
-                const bucket = aliases[rowData.alias.toLowerCase()];
-                const slot = rowData.url.indexOf("{argument}") !== -1 ? "arg" : "plain";
-                if (bucket && bucket.conflict[slot]) { row.className = 'data-row conflict-row'; }
-
-                // Col 1: alias (tinted gutter / key column).
+                // Col 1: alias(es) (tinted gutter / key column). Merged groups show a comma-joined list.
+                const aliasText = group.aliases.join(", ");
                 const aliasCell = document.createElement('td');
                 aliasCell.className = 'alias-cell';
-                aliasCell.textContent = rowData.alias;
-                aliasCell.title = rowData.alias;
+                aliasCell.textContent = aliasText;
+                aliasCell.title = aliasText;
                 row.appendChild(aliasCell);
 
                 // Col 2: description.
                 const descCell = document.createElement('td');
                 descCell.className = 'desc-cell';
-                descCell.textContent = rowData.description;
-                descCell.title = rowData.description;
+                descCell.textContent = group.description;
+                descCell.title = group.description;
                 row.appendChild(descCell);
 
                 // Col 3: url (lowest priority — ellipsizes, then hides under 640px).
                 const urlCell = document.createElement('td');
                 urlCell.className = 'url-cell';
                 const link = document.createElement('a');
-                link.href = rowData.url;
-                link.textContent = rowData.url;
+                link.href = group.url;
+                link.textContent = group.url;
                 link.target = '_blank';
                 link.rel = 'noopener';
-                link.title = rowData.url;
+                link.title = group.url;
                 urlCell.appendChild(link);
                 row.appendChild(urlCell);
 
                 tableBody.appendChild(row);
-
-                // Notes row: full-width, directly below its main row. Rendered only when a row carries a
-                // non-empty `notes` field. No current alias has notes, so this never fires today — the
-                // structure is reserved for a future "notes" column in the #redirectData format.
-                if (rowData.notes) {
-                    const notesRow = document.createElement('tr');
-                    notesRow.className = 'notes-row';
-                    const notesCell = document.createElement('td');
-                    notesCell.colSpan = 3;
-                    notesCell.textContent = rowData.notes;
-                    notesRow.appendChild(notesCell);
-                    tableBody.appendChild(notesRow);
-                }
             });
 
             // Check if there's a redirect request.

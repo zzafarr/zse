@@ -22,6 +22,7 @@ const buildSearchUrl = extractFn("function buildSearchUrl(origin, pathname, plac
 const buildOpenSearchXml = extractFn("function buildOpenSearchXml(shortName, origin, pathname) {");
 const opensearchStrategy = extractFn("function opensearchStrategy(origin, pinnedHost) {");
 const parseRedirects = extractFn("function parseRedirects(text) {");
+const groupRowsForDisplay = extractFn("function groupRowsForDisplay(rows, aliases) {");
 
 let passed = 0, failed = 0;
 function eq(actual, expected, name) {
@@ -276,6 +277,87 @@ eq(dParsed.rows.length, 2, "parseRedirects: duplicate rows are BOTH kept in rows
 eq(dParsed.aliases["d"].variants.plain.description, "First",
    "parseRedirects: first row's description wins on dup");
 
+// --- Comma-list aliases: field 0 may be "ha,hass,hal" -> expands to N separate rows/folds ---
+// Comma expansion is pure shorthand: each alias behaves EXACTLY as if authored on its own line.
+const commaList = parseRedirects("# S\nha,hass,hal | http://192.168.3.3:8123/ | HA local");
+eq(commaList.rows.map(r => r.type === "separator" ? "#" + r.title : r.alias),
+   ["#S", "ha", "hass", "hal"],
+   "comma-list: one row per alias, in list order");
+eq(Object.keys(commaList.aliases).sort(), ["ha", "hal", "hass"],
+   "comma-list: each alias folded into the resolution map");
+eq(resolveRedirect(commaList.aliases, "hass"),
+   { status: "ok", url: "http://192.168.3.3:8123/", description: "HA local" },
+   "comma-list: any listed alias resolves to the shared url");
+// Missing description defaults to the FIRST alias in the list.
+eq(parseRedirects("ha,hass | http://x/").rows[0].description, "ha",
+   "comma-list: missing description defaults to first alias");
+// Whitespace around commas is trimmed.
+eq(parseRedirects("ha , hass ,hal | http://x/ | D").rows.map(r => r.alias),
+   ["ha", "hass", "hal"],
+   "comma-list: whitespace around commas trimmed");
+// Empty items (stray/trailing commas) are skipped; a wholly-empty list makes the line malformed.
+eq(parseRedirects("ha,,hass, | http://x/ | D").rows.map(r => r.alias),
+   ["ha", "hass"],
+   "comma-list: empty items from stray/trailing commas skipped");
+eq(parseRedirects(" , , | http://x/ | D").rows.length, 0,
+   "comma-list: all-empty alias list -> line skipped as malformed");
+// raw / {argument} applies to EVERY alias in the list.
+const commaRaw = parseRedirects("a,b | https://freedium.cfd/{argument} | Freedium | raw");
+assert(commaRaw.aliases["a"].variants.arg.raw === true && commaRaw.aliases["b"].variants.arg.raw === true,
+   "comma-list: raw:true applies to all aliases in the list");
+eq(resolveRedirect(commaRaw.aliases, "b https://m.com/p"),
+   { status: "ok", url: "https://freedium.cfd/https://m.com/p", description: "Freedium" },
+   "comma-list: {argument}+raw substitution works for a non-first listed alias");
+// Conflict still fires: a comma-listed alias clashing elsewhere (same slot, diff url) is a config
+// error, EXACTLY as if both rows were authored separately (comma expansion adds no new rules).
+const commaConflict = parseRedirects("ha,hass | http://a/ | X\nhass | http://b/ | X");
+assert(commaConflict.aliases["hass"].conflict.plain, "comma-list: clashing listed alias still conflicts");
+assert(!commaConflict.aliases["ha"].conflict.plain, "comma-list: conflict is per-alias (ha unaffected)");
+// Exact-URL dup across a comma line and a separate line is still just a harmless dup (first wins).
+const commaDup = parseRedirects("ha,hass | http://a/ | First\nhass | http://a/ | Second");
+assert(!commaDup.aliases["hass"].conflict.plain, "comma-list: same-url dup is not a conflict");
+eq(commaDup.aliases["hass"].variants.plain.description, "First",
+   "comma-list: first row's description wins on same-url dup");
+
+// --- groupRowsForDisplay: collapse rows sharing url+desc within a section into one display row ---
+// Comma-authored OR separate-line duplicates both collapse to a single row with joined aliases.
+const gp = parseRedirects("# HA\nha,hass,hal | http://ha/ | HA local");
+eq(groupRowsForDisplay(gp.rows, gp.aliases),
+   [{ type: "separator", title: "HA" },
+    { type: "entry", aliases: ["ha", "hass", "hal"], url: "http://ha/", description: "HA local", raw: false, conflict: false }],
+   "grouping: comma-list collapses to one row with joined aliases");
+// Separate authored lines with identical url+desc also merge (auto-merge, not only comma-authored).
+const gpSep = parseRedirects("# HA\nha | http://ha/ | HA local\nhass | http://ha/ | HA local\nhal | http://ha/ | HA local");
+eq(groupRowsForDisplay(gpSep.rows, gpSep.aliases).find(g => g.type === "entry").aliases,
+   ["ha", "hass", "hal"],
+   "grouping: separate lines with same url+desc auto-merge into one row");
+// A merged group never spans a section divider: identical url+desc in two sections stay two rows.
+const gpCross = parseRedirects("# S1\nq | http://z/ | Z\n# S2\nr | http://z/ | Z");
+eq(groupRowsForDisplay(gpCross.rows, gpCross.aliases).filter(g => g.type === "entry").map(g => g.aliases),
+   [["q"], ["r"]],
+   "grouping: same url+desc in different sections are NOT merged (section anchors grouping)");
+// Different description -> not merged even with the same url.
+const gpDesc = parseRedirects("a | http://z/ | First\nb | http://z/ | Second");
+eq(groupRowsForDisplay(gpDesc.rows, gpDesc.aliases).map(g => g.aliases),
+   [["a"], ["b"]],
+   "grouping: same url but different description -> separate rows");
+// Different url -> not merged even with the same description.
+const gpUrl = parseRedirects("a | http://a/ | Same\nb | http://b/ | Same");
+eq(groupRowsForDisplay(gpUrl.rows, gpUrl.aliases).map(g => g.aliases),
+   [["a"], ["b"]],
+   "grouping: same description but different url -> separate rows");
+// Non-adjacent same url+desc within a section still merge (indexed by url+desc, not adjacency).
+const gpGap = parseRedirects("# S\nha | http://ha/ | HA\nother | http://o/ | O\nhass | http://ha/ | HA");
+eq(groupRowsForDisplay(gpGap.rows, gpGap.aliases).filter(g => g.type === "entry").map(g => g.aliases),
+   [["ha", "hass"], ["other"]],
+   "grouping: non-adjacent rows with same url+desc merge (folded into first group)");
+// Conflicted rows are NEVER merged — each stays its own red single-alias group.
+const gpConflict = parseRedirects("c | http://a/ | C\nc | http://b/ | C");
+eq(groupRowsForDisplay(gpConflict.rows, gpConflict.aliases),
+   [{ type: "entry", aliases: ["c"], url: "http://a/", description: "C", raw: false, conflict: true },
+    { type: "entry", aliases: ["c"], url: "http://b/", description: "C", raw: false, conflict: true }],
+   "grouping: conflicted rows stay separate single-alias red groups (not merged)");
+
 // --- The real inline #redirectData block parses and matches the shipping map's expectations ---
 const dataBlock = html.match(/<script type="text\/plain" id="redirectData">\n([\s\S]*?)<\/script>/)[1];
 const live = parseRedirects(dataBlock);
@@ -292,6 +374,12 @@ eq(resolveRedirect(live.aliases, "fdm https://medium.com/@x/post"),
 ["sf","gm","ha","hass","hal","har","nabu","bi","bilan","unifi","cbb","deluge","tt","todo","zse",
  "frontodoor","driveway","southgate","grill","patio","northgate","garage","amcredit","ecobee","rent","cct","fdm"
 ].forEach((a) => assert(a in live.aliases, "live data: alias '" + a + "' present"));
+// The comma-collapsed HA aliases render as single merged display rows (feature working on real data).
+const liveGroups = groupRowsForDisplay(live.rows, live.aliases);
+assert(liveGroups.some(g => g.type === "entry" && g.aliases.join(",") === "ha,hass,hal"),
+   "live data: ha/hass/hal collapse into one display row");
+assert(liveGroups.some(g => g.type === "entry" && g.aliases.join(",") === "har,nabu"),
+   "live data: har/nabu collapse into one display row");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

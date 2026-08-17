@@ -37,13 +37,14 @@ Address bar → type your keyword (`@`) → **Tab** → alias (+ optional argume
 Aliases live in the **`<script type="text/plain" id="redirectData">`** block near the top of the source (just inside `<body>`, so it's the first thing you reach when editing) — a simple **`|`-delimited** list, parsed at load. One record per line; order = table order.
 
 ```
-alias | url [| description [| raw]]
+alias[,alias2,…] | url [| description [| raw]]
 ```
 
 - **`# Section Title`** on its own line = a section header row (also works as a comment).
 - **Fields are separated by `|`.** `|` never appears in URLs, so you never have to quote or escape anything (unlike CSV with commas).
 - **Whitespace around `|` is optional** — it's trimmed, so `ha | url` and `ha|url` are equivalent. Pad it out to align columns if you like.
-- **Description** is optional (defaults to the alias). **4th field `raw`** (or `true`) inserts the argument verbatim — see below.
+- **The alias field may be a comma-separated list** — `ha,hass,hal | url | desc` gives all three the same URL/description in one line (see [Multiple aliases, one URL](#multiple-aliases-one-url)).
+- **Description** is optional (defaults to the (first) alias). **4th field `raw`** (or `true`) inserts the argument verbatim — see below.
 - **An alias may appear twice** — one row *without* `{argument}` and one *with* — to give it two behaviors (see [Two behaviors for one alias](#two-behaviors-for-one-alias)).
 - Blank lines are ignored.
 
@@ -67,6 +68,22 @@ Type an alias, a space, then an argument: `@`⇥`g cute cats`.
 - The value is split on the **first space** — everything after is the argument (may itself contain spaces, `?`, `://`).
 - `{argument}` in the `url` is where the argument goes.
 - By default the argument is URL-**encoded** (`cute cats` → `cute%20cats`). Add **`raw: true`** to insert it verbatim — needed for path-style nested URLs like Freedium.
+
+### Multiple aliases, one URL
+
+Give one URL several aliases by listing them **comma-separated** in the alias field:
+
+```
+ha,hass,hal | http://192.168.3.3:8123/                  | home assistant local
+har,nabu    | https://…ui.nabu.casa/                     | home assistant Nabucasa
+```
+
+- Any listed alias resolves to the shared URL — `@`⇥`ha`, `@`⇥`hass`, and `@`⇥`hal` all land on the same place.
+- The `description` and `raw`/`{argument}` behavior apply to **every** alias in the list.
+- It's pure shorthand: `ha,hass,hal | url | desc` is exactly equivalent to writing those three rows on separate lines. You can still use separate lines if you prefer — mix and match freely.
+- Whitespace around commas is trimmed (`ha, hass, hal` works); empty items (stray or trailing commas) are ignored.
+
+**Table auto-merge:** in the browsable index, rows that share the **same URL *and* same description** (within a section) collapse into a **single row** showing all their aliases (`ha, hass, hal`) — whether you authored them comma-separated or on separate lines. Conflicting rows (see below) are never merged, so config errors stay individually visible.
 
 ### Two behaviors for one alias
 
@@ -116,7 +133,7 @@ The page is tiny and static, so it caches well. A few realities on **GitHub Page
 
 ## Tests
 
-Pure logic (`resolveRedirect`, `parseRedirects`, `buildSearchUrl`, `buildOpenSearchXml`, `opensearchStrategy`) is unit-tested — including two-variant aliases (plain/arg selection), duplicate dedup, same-slot conflicts, and that the real inline `#redirectData` block parses correctly and resolves end-to-end. The tests extract the functions straight from `index.htm`, so there's no separate copy to drift.
+Pure logic (`resolveRedirect`, `parseRedirects`, `groupRowsForDisplay`, `buildSearchUrl`, `buildOpenSearchXml`, `opensearchStrategy`) is unit-tested — including two-variant aliases (plain/arg selection), duplicate dedup, same-slot conflicts, comma-list alias expansion (raw applies to all, empty items skipped, conflicts still fire), table auto-merge grouping (same url+desc within a section; not across sections or conflicts), and that the real inline `#redirectData` block parses correctly and resolves end-to-end. The tests extract the functions straight from `index.htm`, so there's no separate copy to drift.
 
 ```
 node tests/resolve.test.js
