@@ -61,93 +61,248 @@ cct        | https://anthropic.skilljar.com/claude-code-in-action               
 fdm        | https://freedium-mirror.cfd/{argument}                                           | Freedium | raw
 </script>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+        /* "Two-Tone Key/Value Split" design: tinted alias gutter (key) on the left, white value zone
+           (description + URL) on the right — reads like an API-reference / glossary table. Light,
+           compact, modern. */
+        :root {
+            --gutter-bg: #f3f4f6;
+            --border: #e5e7eb;
+            --border-strong: #d1d5db;
+            --text: #1f2937;
+            --text-muted: #6b7280;
+            --accent: #2563eb;
+            --accent-hover: #1d4ed8;
+            --header-bg: #fafafa;
         }
-        .redirect-message {
-            background-color: #b3ffb3;
-            border-left: 4px solid #40c040;
-            padding: 12px;
-            margin-bottom: 20px;
-            display: none;
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            padding: 0;
+            background: #ffffff;
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-size: 13px;
         }
-        .no-match-message {
-            background-color: #ffaaaa;
-            border-left: 4px solid #ff8c00;
-            padding: 12px;
-            margin-bottom: 20px;
-            display: none;
-        }
-	    
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-        }
-        th, td {
-            padding: 6px 12px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
-        }
-        th {
-            background-color: #f2f2f2;
-        }
-        tr:hover {
-            background-color: #f5f5f5;
-        }
-        /* Rows whose (alias, variant) is defined twice with different URLs — a config error. */
-        .conflict-row td { background-color: #ffe0e0; color: #b00000; }
-        .conflict-row:hover { background-color: #ffd0d0; }
         .container {
             max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
         }
-        .setup {
-            background-color: #f2f7ff;
-            border: 1px solid #cfe0ff;
+        .container h1 {
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            margin: 0 0 12px;
+        }
+
+        /* --- Redirect / warning / error notices (shared box; recolored per state) --- */
+        .notice {
+            padding: 10px 14px;
+            margin-bottom: 16px;
+            border: 1px solid transparent;
+            border-left-width: 4px;
             border-radius: 6px;
+            font-size: 13px;
+            display: none;                       /* shown by JS when active */
+        }
+        /* Green "ok" redirect */
+        .redirect-message {
+            background-color: #ecfdf3;
+            border-color: #abefc6;
+            border-left-color: #17b26a;
+            color: #085d3a;
+        }
+        /* Amber "redirecting without argument": JS adds .warn-message to the .redirect-message box.
+           Overrides the green colors above (later rule + equal specificity wins). */
+        .redirect-message.warn-message {
+            background-color: #fffaeb;
+            border-color: #fedf89;
+            border-left-color: #f79009;
+            color: #93370d;
+        }
+        /* Red "not found" / "config error" */
+        .no-match-message {
+            background-color: #fef3f2;
+            border-color: #fecdca;
+            border-left-color: #f04438;
+            color: #912018;
+        }
+
+        /* --- Table: alias | description | url, responsive (url degrades then hides) --- */
+        .table-wrap {
+            width: 100%;
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            font-size: 13px;
+        }
+        /* Column widths: alias min ~12ch, description min ~32ch, url min ~64ch */
+        col.col-alias { width: 14ch; }
+        col.col-desc  { width: 32ch; }
+        col.col-url   { width: 64ch; }
+
+        thead th {
+            text-align: left;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--text-muted);
+            background: var(--header-bg);
+            border-bottom: 1px solid var(--border-strong);
+            padding: 7px 12px;
+            position: sticky;
+            top: 0;
+        }
+        thead th.col-alias { background: var(--gutter-bg); }
+
+        tbody tr.data-row { border-bottom: 1px solid var(--border); }
+        tbody tr.data-row:hover { background: #fbfbfc; }
+        tbody tr.data-row:hover td.alias-cell { background: #ebedf0; }
+
+        td {
+            padding: 6px 12px;
+            vertical-align: middle;
+            overflow: hidden;
+        }
+        /* The tinted left gutter housing the alias/key column */
+        td.alias-cell {
+            background: var(--gutter-bg);
+            border-right: 1px solid var(--border-strong);
+            font-family: "SF Mono", ui-monospace, "Menlo", "Consolas", monospace;
+            font-weight: 500;
+            font-size: 12.5px;
+            color: #111827;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        td.desc-cell {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        td.url-cell {
+            max-width: 0;                        /* forces ellipsis to respect table-layout:fixed width */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        td.url-cell a { color: var(--accent); text-decoration: none; font-size: 12.5px; }
+        td.url-cell a:hover { text-decoration: underline; }
+
+        /* Section header divider row: full-width, spans all columns */
+        tr.section-row td {
+            background: var(--header-bg);
+            border-top: 1px solid var(--border-strong);
+            border-bottom: 1px solid var(--border-strong);
+            padding: 5px 12px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #4b5563;
+        }
+        tr.section-row:first-child td { border-top: none; }
+
+        /* Notes row: spans all columns, sits directly below its main row. Rendered only when an entry
+           has a non-empty notes field (none today — structure reserved for later). */
+        tr.notes-row td {
+            background: #fffbea;
+            border-bottom: 1px solid var(--border);
+            padding: 5px 12px 7px;
+            font-size: 12px;
+            color: #78716c;
+            font-style: italic;
+        }
+
+        /* Rows whose (alias, variant) is defined twice with different URLs — a config error. */
+        .conflict-row td { background-color: #fef3f2; color: #b42318; }
+        .conflict-row td.alias-cell { background-color: #fee4e2; color: #b42318; }
+        .conflict-row:hover td { background-color: #fee4e2; }
+
+        @media (max-width: 640px) {
+            col.col-url { width: 0; }
+            th.col-url, td.url-cell { display: none; }
+            col.col-desc { width: auto; }
+        }
+
+        /* --- Search-engine setup panel (matched to the two-tone light aesthetic) --- */
+        .setup {
+            background: var(--header-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
             padding: 16px;
             margin-top: 24px;
         }
-        /* URL box + Copy button share one line; wrap gracefully on narrow widths. */
-        .setup-url-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-        .setup h2 { margin: 0 0 8px; font-size: 1.1em; }
-        .setup ol { margin: 8px 0 0; padding-left: 20px; }
+        .setup h2 {
+            margin: 0 0 10px;
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--text-muted);
+        }
+        .setup ol { margin: 10px 0 0; padding-left: 20px; color: var(--text); }
+        .setup li { margin: 4px 0; }
         .setup code {
             background: #fff;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border);
             border-radius: 4px;
             padding: 1px 5px;
-            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 12px;
         }
-        .setup-url {
-            word-break: break-all;
-        }
+        /* URL box + Copy button share one line; wrap gracefully on narrow widths. */
+        .setup-url-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; color: var(--text-muted); }
+        .setup-url { word-break: break-all; color: var(--text); }
         .copy-btn {
             font: inherit;
+            font-size: 12px;
             cursor: pointer;
-            background: #2563eb;
+            background: var(--accent);
             color: #fff;
             border: none;
             border-radius: 5px;
-            padding: 7px 14px;
+            padding: 6px 12px;
         }
-        .copy-btn:hover { background: #1d4ed8; }
-        .copy-status { color: #197d19; font-size: 0.9em; }
+        .copy-btn:hover { background: var(--accent-hover); }
+        .copy-status { color: #085d3a; font-size: 12px; }
     </style>
     <div class="container">
-        <div id="redirectMessage" class="redirect-message">
+        <div id="redirectMessage" class="notice redirect-message">
             <span id="redirectLabel">Redirecting to </span><span id="redirectTarget"></span>...
         </div>
-        <div id="noMatchMessage" class="no-match-message">
+        <div id="noMatchMessage" class="notice no-match-message">
             Alias Not Found <span id="noMatchTarget"></span>
         </div>
         <h1>Available Redirects</h1>
-        <table>
-            <tbody id="redirectsTable">
-            </tbody>
-        </table>
+        <div class="table-wrap">
+            <table>
+                <colgroup>
+                    <col class="col-alias">
+                    <col class="col-desc">
+                    <col class="col-url">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th class="col-alias">Alias</th>
+                        <th class="col-desc">Description</th>
+                        <th class="col-url">URL</th>
+                    </tr>
+                </thead>
+                <tbody id="redirectsTable">
+                </tbody>
+            </table>
+        </div>
         <div class="setup">
             <h2>Use this as a Chrome search engine</h2>
             <p class="setup-url-line">Search URL for this site (auto-detected):
@@ -404,60 +559,70 @@ fdm        | https://freedium-mirror.cfd/{argument}                             
             const tableBody = document.getElementById('redirectsTable');
 
             // Render every authored row in order (including exact duplicates — they're shown as-is and
-            // only ignored at resolve time). A row whose (alias, slot) is in conflict (same slot defined
-            // twice with different urls) is highlighted red so config errors are visible while editing.
+            // only ignored at resolve time). Three columns: alias (tinted gutter) | description | url.
+            // A row whose (alias, slot) is in conflict (same slot defined twice with different urls) is
+            // highlighted red so config errors are visible while editing. Long descriptions/urls are
+            // single-line ellipsized (CSS); the full text is exposed via a title tooltip.
             rows.forEach(rowData => {
                 if (rowData.type === "separator") {
-                    // Create separator row
-                    const separatorRow = document.createElement('tr');
-                    separatorRow.className = 'separator-row';
+                    // Full-width section divider spanning all three columns.
+                    const sectionRow = document.createElement('tr');
+                    sectionRow.className = 'section-row';
+                    const sectionCell = document.createElement('td');
+                    sectionCell.colSpan = 3;
+                    sectionCell.textContent = rowData.title;
+                    sectionRow.appendChild(sectionCell);
+                    tableBody.appendChild(sectionRow);
+                    return;
+                }
 
-                    const separatorCell = document.createElement('td');
-                    separatorCell.colSpan = 2;
-                    separatorCell.textContent = rowData.title;
-                    separatorCell.style.fontWeight = 'bold';
-                    separatorCell.style.padding = '8px';
-                    separatorCell.style.backgroundColor = '#f5f5f5';
-                    separatorCell.style.borderTop = '2px solid #ddd';
-                    separatorCell.style.borderBottom = '2px solid #ddd';
+                const row = document.createElement('tr');
+                row.className = 'data-row';
 
-                    separatorRow.appendChild(separatorCell);
-                    tableBody.appendChild(separatorRow);
-                } else {
-                    // Create regular row
-                    const row = document.createElement('tr');
+                // Flag conflicted rows red: look up this row's slot in the resolution map.
+                const bucket = aliases[rowData.alias.toLowerCase()];
+                const slot = rowData.url.indexOf("{argument}") !== -1 ? "arg" : "plain";
+                if (bucket && bucket.conflict[slot]) { row.className = 'data-row conflict-row'; }
 
-                    // Flag conflicted rows red: look up this row's slot in the resolution map.
-                    const bucket = aliases[rowData.alias.toLowerCase()];
-                    const slot = rowData.url.indexOf("{argument}") !== -1 ? "arg" : "plain";
-                    if (bucket && bucket.conflict[slot]) { row.className = 'conflict-row'; }
+                // Col 1: alias (tinted gutter / key column).
+                const aliasCell = document.createElement('td');
+                aliasCell.className = 'alias-cell';
+                aliasCell.textContent = rowData.alias;
+                aliasCell.title = rowData.alias;
+                row.appendChild(aliasCell);
 
-                    // Key column
-                    const keyCell = document.createElement('td');
-                    keyCell.textContent = rowData.alias;
-                    row.appendChild(keyCell);
+                // Col 2: description.
+                const descCell = document.createElement('td');
+                descCell.className = 'desc-cell';
+                descCell.textContent = rowData.description;
+                descCell.title = rowData.description;
+                row.appendChild(descCell);
 
-                    // URL and Description column
-                    const urlCell = document.createElement('td');
+                // Col 3: url (lowest priority — ellipsizes, then hides under 640px).
+                const urlCell = document.createElement('td');
+                urlCell.className = 'url-cell';
+                const link = document.createElement('a');
+                link.href = rowData.url;
+                link.textContent = rowData.url;
+                link.target = '_blank';
+                link.rel = 'noopener';
+                link.title = rowData.url;
+                urlCell.appendChild(link);
+                row.appendChild(urlCell);
 
-                    // Add description first
-                    const descSpan = document.createElement('span');
-                    descSpan.textContent = rowData.description;
-                    descSpan.style.color = '#666';
-                    descSpan.style.fontSize = '0.9em';
-                    urlCell.appendChild(descSpan);
+                tableBody.appendChild(row);
 
-                    // Add line break and link
-                    urlCell.appendChild(document.createElement('br'));
-                    const link = document.createElement('a');
-                    link.href = rowData.url;
-                    link.textContent = rowData.url;
-                    link.target = '_blank'; // Open in new tab
-                    link.style.fontSize = '0.85em';
-                    urlCell.appendChild(link);
-
-                    row.appendChild(urlCell);
-                    tableBody.appendChild(row);
+                // Notes row: full-width, directly below its main row. Rendered only when a row carries a
+                // non-empty `notes` field. No current alias has notes, so this never fires today — the
+                // structure is reserved for a future "notes" column in the #redirectData format.
+                if (rowData.notes) {
+                    const notesRow = document.createElement('tr');
+                    notesRow.className = 'notes-row';
+                    const notesCell = document.createElement('td');
+                    notesCell.colSpan = 3;
+                    notesCell.textContent = rowData.notes;
+                    notesRow.appendChild(notesCell);
+                    tableBody.appendChild(notesRow);
                 }
             });
 
@@ -498,8 +663,8 @@ fdm        | https://freedium-mirror.cfd/{argument}                             
                     const labelSpan = document.getElementById('redirectLabel');
                     let delayMs = 500;
                     if (result.status === "noarg") {
-                        messageDiv.style.backgroundColor = '#ffd8a8';
-                        messageDiv.style.borderLeftColor = '#ff8c00';
+                        // Recolor the green box to amber via a class (keeps colors in the stylesheet).
+                        messageDiv.classList.add('warn-message');
                         labelSpan.textContent = 'Redirecting without argument to ';
                         delayMs = 1000;
                     }

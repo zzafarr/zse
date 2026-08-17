@@ -10,14 +10,14 @@ Type `@`⇥`ha` → land on your Home Assistant. Type `@`⇥`fdm https://medium.
 2. Typing `<keyword>`⇥`<alias> [argument]` sends you to `https://<your-host>/?alias=<alias> <argument>`.
 3. `index.htm` looks up the alias in its `redirects` map and redirects you to the target URL, optionally substituting your argument.
 
-Visiting the page with no `?alias=` shows a browsable table of every alias plus a setup panel.
+Visiting the page with no `?alias=` shows a browsable table of every alias, with a compact setup panel below it.
 
 ## Use it yourself (fork & deploy)
 
 1. **Fork** this repo to your account.
 2. **Enable GitHub Pages:** repo → Settings → Pages → Source = `main` branch, root. Your site publishes at `https://<you>.github.io/<repo>/`.
 3. **Edit `index.htm`** — replace the entries in the `#redirectData` block with your own aliases (see below).
-4. **Open your published page.** The blue setup panel at the top auto-detects your host and shows your exact search URL.
+4. **Open your published page.** The setup panel (below the table) auto-detects your host and shows your exact search URL.
 
 ## Register it in Chrome
 
