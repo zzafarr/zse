@@ -1,0 +1,105 @@
+# zse — a personal redirect "search engine"
+
+Turn short aliases you type in the browser address bar into full URLs. `zse` is a single static HTML file (`index.htm`) hosted on GitHub Pages — no backend, no build, no dependencies.
+
+Type `@`⇥`ha` → land on your Home Assistant. Type `@`⇥`fdm https://medium.com/...` → land on the Freedium version of that article.
+
+## How it works
+
+1. You register `zse` as a **custom search engine** in Chrome with a keyword (e.g. `@`).
+2. Typing `<keyword>`⇥`<alias> [argument]` sends you to `https://<your-host>/?alias=<alias> <argument>`.
+3. `index.htm` looks up the alias in its `redirects` map and redirects you to the target URL, optionally substituting your argument.
+
+Visiting the page with no `?alias=` shows a browsable table of every alias plus a setup panel.
+
+## Use it yourself (fork & deploy)
+
+1. **Fork** this repo to your account.
+2. **Enable GitHub Pages:** repo → Settings → Pages → Source = `main` branch, root. Your site publishes at `https://<you>.github.io/<repo>/`.
+3. **Edit `index.htm`** — replace the entries in the `redirects` map with your own aliases (see below).
+4. **Open your published page.** The blue setup panel at the top auto-detects your host and shows your exact search URL.
+
+## Register it in Chrome
+
+The page helps two ways (host is auto-detected — no editing needed):
+
+- **Auto-discovery (OpenSearch):** just visiting your page makes Chrome offer the **`zse`** engine under **Settings → Search engines**. Open that, find it, and set a keyword (e.g. `@`). Chrome intentionally won't let a page set the keyword for you. (The page links a static [`opensearch.xml`](opensearch.xml) when served from its pinned host; forks on a different host get an equivalent descriptor generated at runtime, so no file edit is needed.)
+- **Manual (works everywhere):** click **Copy search URL** on the page, then Chrome → **Settings → Search engines → Manage → Add**, paste into "URL with %s", and choose a name + shortcut keyword.
+
+> **Fully silent, one-click registration is not possible** from a web page — Chrome has no such API (it would be a hijacking vector). OpenSearch + copy button is as close as it gets without installing an extension.
+
+### Daily use
+
+Address bar → type your keyword (`@`) → **Tab** → alias (+ optional argument) → **Enter**.
+
+## Configuring aliases
+
+Each entry in the `redirects` object maps an **alias** to a target. Order = table order. Section headers are `{ type: "separator" }`.
+
+```js
+let redirects = {
+    "My Stuff": { type: "separator" },          // section header row
+
+    "ha": {                                       // plain alias
+        url: "http://192.168.3.3:8123/",
+        description: "home assistant local"
+    },
+
+    "g": {                                        // alias with an argument (encoded)
+        url: "https://www.google.com/search?q={argument}",
+        description: "Google search"
+    },
+
+    "fdm": {                                      // argument inserted RAW (nested URL)
+        url: "https://freedium-mirror.cfd/{argument}",
+        raw: true,
+        description: "Freedium"
+    }
+};
+```
+
+### Arguments
+
+Type an alias, a space, then an argument: `@`⇥`g cute cats`.
+
+- The value is split on the **first space** — everything after is the argument (may itself contain spaces, `?`, `://`).
+- `{argument}` in the `url` is where the argument goes.
+- By default the argument is URL-**encoded** (`cute cats` → `cute%20cats`). Add **`raw: true`** to insert it verbatim — needed for path-style nested URLs like Freedium.
+
+### The four cases
+
+| Alias URL has `{argument}`? | You passed an argument? | Result | Notice |
+|---|---|---|---|
+| No | No | redirect to the URL as-is | green |
+| Yes | Yes | substitute the argument (encoded, or raw) | green |
+| No | Yes | redirect anyway, argument ignored | **orange** "without argument" |
+| Yes | No | redirect with `{argument}` stripped out | **orange** "without argument" |
+
+Unknown alias → red "Alias Not Found".
+
+## Caching & refresh
+
+The page is tiny and static, so it caches well. A few realities on **GitHub Pages**:
+
+- `<meta http-equiv="Cache-Control">` tags are **ignored** by browsers for HTTP caching — only real response headers count, so the file doesn't carry one.
+- GitHub Pages sets its **own** `Cache-Control` (~10 min) plus an `ETag`, and **does not allow custom headers**. So you can't force a true 1-day browser cache here; instead the browser revalidates via the ETag (usually a fast `304 Not Modified`). For genuine long-lived / offline caching you'd need a service worker (intentionally not used here to keep things simple).
+
+**Force a refresh after editing aliases:**
+
+1. Navigate to a **non-existent alias**, e.g. `…/?alias=xxx`. It shows the page (red "Alias Not Found") and does **not** redirect — so nothing bounces you away mid-refresh.
+2. Press **Ctrl+Shift+R** (hard reload) to bypass the cache and re-fetch.
+
+> Don't use a *real* alias for this — real aliases auto-redirect in 0.5–1 s, which races your reload. The bad-alias trick keeps the page still so the hard reload lands cleanly.
+
+## Tests
+
+Pure logic (`resolveRedirect`, `buildSearchUrl`, `buildOpenSearchXml`, `opensearchStrategy`) is unit-tested. The tests extract the functions straight from `index.htm`, so there's no separate copy to drift.
+
+```
+node tests/resolve.test.js
+```
+
+## Notes
+
+- The repo/source and every URL in it are **public** if the repo is public. Don't put secrets/tokens in alias URLs.
+- Full design and rebuild spec: [`spec/0.requirements.md`](spec/0.requirements.md).

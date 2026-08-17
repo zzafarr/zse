@@ -1,7 +1,11 @@
 <!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
-	<meta http-equiv="Cache-control" content="private, max-age=3600">
+    <!-- No <meta http-equiv="Cache-Control">: browsers ignore it for HTTP caching; only real
+         response headers count. This is served by GitHub Pages, which sets its own
+         Cache-Control (~10 min) + ETag and does not allow custom headers, so caching/refresh
+         is governed by GitHub's CDN. To force-refresh: navigate to a non-existent alias (e.g.
+         ?alias=xxx) so the page shows without redirecting, then hard-reload (Ctrl+Shift+R). -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Redirect Links</title>
     <style>
@@ -10,7 +14,7 @@
         }
         .redirect-message {
             background-color: #b3ffb3;
-            border-left: 4px solid #ffe7ba;
+            border-left: 4px solid #40c040;
             padding: 12px;
             margin-bottom: 20px;
             display: none;
@@ -44,8 +48,145 @@
             margin: 0 auto;
             padding: 20px;
         }
+        .setup {
+            background-color: #f2f7ff;
+            border: 1px solid #cfe0ff;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 24px;
+        }
+        .setup h2 { margin: 0 0 8px; font-size: 1.1em; }
+        .setup ol { margin: 8px 0 0; padding-left: 20px; }
+        .setup code {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 1px 5px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        }
+        .setup-url {
+            display: inline-block;
+            margin: 4px 0;
+            word-break: break-all;
+        }
+        .copy-btn {
+            font: inherit;
+            cursor: pointer;
+            background: #2563eb;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            padding: 7px 14px;
+        }
+        .copy-btn:hover { background: #1d4ed8; }
+        .copy-status { margin-left: 10px; color: #197d19; font-size: 0.9em; }
     </style>
     <script>
+        // Pure resolver: maps the raw ?alias= param value to a redirect descriptor.
+        // No DOM/navigation side effects, so it is unit-testable (see tests/resolve.test.js).
+        //
+        // Parsing: decode the value (Chrome's %s substitution may percent-encode spaces),
+        // then split on the FIRST space only -> alias + optional argument. The argument may
+        // itself contain spaces, '?', and '://' (e.g. a nested URL), so only the first space
+        // delimits; everything after is the argument verbatim.
+        //
+        // Argument substitution into the alias url's "{argument}" placeholder:
+        //   - default: encodeURIComponent(argument)  (search-style params)
+        //   - entry.raw === true: insert argument verbatim  (path-style nested URLs, e.g. Freedium)
+        //
+        // Returns one of:
+        //   { status: "notfound", alias }                       -> red "Alias Not Found"
+        //   { status: "ok",       url, description }            -> green "Redirecting to <desc>"
+        //   { status: "noarg",    url, description }            -> orange "Redirecting without argument"
+        // Callers redirect (location.replace) for "ok"/"noarg": "ok" after 500ms, "noarg" after
+        // 1000ms (the longer delay makes the orange "without argument" warning noticeable).
+        //
+        // The four argument/placeholder cases (hasPlaceholder x hasArgument):
+        //   1. no/no   -> ok,    url as-is
+        //   2. yes/yes -> ok,    url with {argument} substituted
+        //   3. no/yes  -> noarg, url as-is (argument dropped)
+        //   4. yes/no  -> noarg, url with the {argument} token stripped
+        function resolveRedirect(redirects, aliasParam) {
+            let decoded = aliasParam;
+            try { decoded = decodeURIComponent(aliasParam); } catch (e) { /* keep raw if malformed */ }
+
+            const spaceIdx = decoded.indexOf(" ");
+            const aliasToken = spaceIdx === -1 ? decoded : decoded.slice(0, spaceIdx);
+            const argument = spaceIdx === -1 ? null : decoded.slice(spaceIdx + 1);
+
+            const matchKey = Object.keys(redirects).find(
+                (k) => redirects[k].type !== "separator" && k.toLowerCase() === aliasToken.toLowerCase()
+            );
+            if (!matchKey) {
+                return { status: "notfound", alias: aliasToken };
+            }
+
+            const entry = redirects[matchKey];
+            const hasPlaceholder = entry.url.indexOf("{argument}") !== -1;
+            const hasArgument = argument !== null;
+
+            if (hasPlaceholder && hasArgument) { // case 2
+                const value = entry.raw === true ? argument : encodeURIComponent(argument);
+                return { status: "ok", url: entry.url.split("{argument}").join(value), description: entry.description };
+            }
+            if (hasPlaceholder && !hasArgument) { // case 4: strip the token, leave the rest intact
+                return { status: "noarg", url: entry.url.split("{argument}").join(""), description: entry.description };
+            }
+            if (!hasPlaceholder && hasArgument) { // case 3: no placeholder, drop the argument
+                return { status: "noarg", url: entry.url, description: entry.description };
+            }
+            return { status: "ok", url: entry.url, description: entry.description }; // case 1
+        }
+        // Build this deployment's search-engine template URL by auto-detecting the host from
+        // window.location, so a fork works with zero config (each fork has its own Pages host).
+        // Strips any existing query/hash and appends "?alias=<PLACEHOLDER>". The placeholder is
+        // caller-chosen: "%s" for Chrome's manual "Add search engine" dialog, "{searchTerms}" for
+        // the OpenSearch descriptor. Example: buildSearchUrl("https://u.github.io", "/zse/", "%s")
+        //   -> "https://u.github.io/zse/?alias=%s"
+        function buildSearchUrl(origin, pathname, placeholder) {
+            const path = pathname.endsWith("/") ? pathname : pathname.replace(/[^/]*$/, "");
+            return origin + path + "?alias=" + placeholder;
+        }
+
+        // OpenSearch descriptor XML (https://developer.mozilla.org/docs/Web/OpenSearch).
+        // Chrome auto-discovers this via a <link rel="search"> tag and pre-populates the engine.
+        // The template MUST be absolute and use the {searchTerms} token (OpenSearch's placeholder);
+        // our page treats whatever follows "?alias=" as the alias(+argument), so {searchTerms} here
+        // is simply the whole typed string.
+        function buildOpenSearchXml(shortName, origin, pathname) {
+            const template = buildSearchUrl(origin, pathname, "{searchTerms}")
+                .replace(/&/g, "&amp;");
+            return '<?xml version="1.0" encoding="UTF-8"?>\n'
+                + '<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">\n'
+                + '  <ShortName>' + shortName + '</ShortName>\n'
+                + '  <Description>' + shortName + ' redirect search engine</Description>\n'
+                + '  <InputEncoding>UTF-8</InputEncoding>\n'
+                + '  <Url type="text/html" method="get" template="' + template + '"/>\n'
+                + '</OpenSearchDescription>\n';
+        }
+
+        // The static ./opensearch.xml pins an absolute template to PINNED_OPENSEARCH_HOST. Its
+        // template is only correct when served from that origin; any other origin (a fork) needs a
+        // runtime descriptor instead. Pure so it is unit-testable: returns "static" | "blob".
+        const PINNED_OPENSEARCH_HOST = "https://zzafarr.github.io";
+        function opensearchStrategy(origin, pinnedHost) {
+            return origin === pinnedHost ? "static" : "blob";
+        }
+
+        // Returns the href for the <link rel="search">: the static file on the pinned host, else a
+        // Blob URL wrapping a runtime descriptor generated from this deployment's location.
+        function buildOpenSearchHref(origin, pathname) {
+            if (opensearchStrategy(origin, PINNED_OPENSEARCH_HOST) === "static") {
+                return "opensearch.xml";
+            }
+            const xml = buildOpenSearchXml("zse", origin, pathname);
+            return URL.createObjectURL(new Blob([xml], { type: "application/opensearchdescription+xml" }));
+        }
+
+        if (typeof module !== "undefined" && module.exports) {
+            module.exports = { resolveRedirect, buildSearchUrl, buildOpenSearchXml, opensearchStrategy };
+        }
+
         let redirects = {
             "Shortcuts": {
                 type: "separator"
@@ -175,7 +316,7 @@
                 url: "https://www.amazon.com/norushcredits",
                 description: "Amazon Credit"
             },
-   	    "amcredit": {
+   	    "ecobee": {
                 url: "https://app.beestat.io/",
                 description: "Ecobee stats"
             },
@@ -188,15 +329,52 @@
 			description: "Claude Code Training"
 		},
 		"fdm": {
-			url: "https://freedium-mirror.cfd/",
+			url: "https://freedium-mirror.cfd/{argument}",
+			raw: true,
 			description: "Freedium"
 		}
 			
         };
 
         window.onload = function () {
+            // --- Setup panel: auto-detect this deployment's host so forks work with zero config ---
+            const engineName = "zse";
+            const manualUrl = buildSearchUrl(window.location.origin, window.location.pathname, "%s");
+
+            // OpenSearch auto-discovery: inject a <link rel="search"> so Chrome pre-populates the
+            // engine. The static ./opensearch.xml is the canonical descriptor (host-pinned); when
+            // served from a fork on a different host its absolute template would be wrong, so we
+            // detect that case and fall back to a runtime-generated Blob descriptor built from
+            // window.location. Chrome still requires the user to set the keyword in Settings.
+            try {
+                const link = document.createElement("link");
+                link.rel = "search";
+                link.type = "application/opensearchdescription+xml";
+                link.title = engineName;
+                link.href = buildOpenSearchHref(window.location.origin, window.location.pathname);
+                document.head.appendChild(link);
+            } catch (e) { /* Blob/URL unavailable -> copy-button path still works */ }
+
+            // Show the manual URL and wire the copy button.
+            const urlSpan = document.getElementById('setupUrl');
+            if (urlSpan) { urlSpan.textContent = manualUrl; }
+            const nameSpan = document.getElementById('setupName');
+            if (nameSpan) { nameSpan.textContent = engineName; }
+            const copyBtn = document.getElementById('copyBtn');
+            if (copyBtn) {
+                copyBtn.addEventListener('click', function () {
+                    const status = document.getElementById('copyStatus');
+                    const done = () => { if (status) { status.textContent = "Copied!"; } };
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(manualUrl).then(done, () => { if (status) status.textContent = "Copy failed — select manually."; });
+                    } else if (status) {
+                        status.textContent = "Clipboard unavailable — select the URL above.";
+                    }
+                });
+            }
+
             const tableBody = document.getElementById('redirectsTable');
-            
+
             // Use the keys in their original order
             const keys = Object.keys(redirects);
             
@@ -253,50 +431,40 @@
                 }
             });
 
-            // Check if there's a redirect request
+            // Check if there's a redirect request.
+            // Prefer ?alias=; fall back to the legacy ?key= param for backward compatibility with
+            // bookmarks/engines set up before the rename.
+            // TODO: remove the ?key= fallback once no legacy links remain.
             const params = new URLSearchParams(window.location.search);
-            const keyParam = params.get("key");
-            
-            if (keyParam) {
-                let tokens = keyParam.split("?");
-                let keyToken = tokens[0];
-                let key = Object.keys(redirects).find( (k) => k.toLowerCase() === keyToken.toLowerCase());
-				
-                if (tokens.length === 1) {
-                    let url = redirects[key]?.url;
-                    if (url) {
-                        const messageDiv = document.getElementById('redirectMessage');
-                        const targetSpan = document.getElementById('redirectTarget');
-                        messageDiv.style.display = 'block';
-                        targetSpan.textContent = redirects[key].description;
-                        setTimeout(() => {
-                            window.location.replace(url);
-                        }, 1000);
-                    } else {
-                        const noMatchMessageDiv = document.getElementById('noMatchMessage');
-                        const noMatchTargetSpan = document.getElementById('noMatchTarget');
-                        noMatchMessageDiv.style.display = 'block';
-                        noMatchTargetSpan.textContent = key;
-		    }
+            const aliasParam = params.get("alias") ?? params.get("key");
+
+            if (aliasParam) {
+                const result = resolveRedirect(redirects, aliasParam);
+
+                if (result.status === "notfound") {
+                    const noMatchMessageDiv = document.getElementById('noMatchMessage');
+                    const noMatchTargetSpan = document.getElementById('noMatchTarget');
+                    noMatchMessageDiv.style.display = 'block';
+                    noMatchTargetSpan.textContent = result.alias;
                 } else {
-                    key += "?";
-                    let searchString = tokens[1];
-                    let url = redirects[key]?.url;
-                    if (url) {
-                        url = url.replace("{searchTerms}", searchString);
-                        const messageDiv = document.getElementById('redirectMessage');
-                        const targetSpan = document.getElementById('redirectTarget');
-                        messageDiv.style.display = 'block';
-                        targetSpan.textContent = redirects[key].description;
-                        setTimeout(() => {
-                            window.location.replace(url);
-                        }, 1000);
-                    } else {
-                        const noMatchMessageDiv = document.getElementById('noMatchMessage');
-                        const noMatchTargetSpan = document.getElementById('noMatchTarget');
-                        noMatchMessageDiv.style.display = 'block';
-                        noMatchTargetSpan.textContent = key;
+                    // "ok" -> green box, fast 500ms redirect; "noarg" -> same box restyled orange
+                    // with "without argument" wording, and a longer 1000ms delay so the warning is
+                    // noticeable before forwarding.
+                    const messageDiv = document.getElementById('redirectMessage');
+                    const targetSpan = document.getElementById('redirectTarget');
+                    const labelSpan = document.getElementById('redirectLabel');
+                    let delayMs = 500;
+                    if (result.status === "noarg") {
+                        messageDiv.style.backgroundColor = '#ffd8a8';
+                        messageDiv.style.borderLeftColor = '#ff8c00';
+                        labelSpan.textContent = 'Redirecting without argument to ';
+                        delayMs = 1000;
                     }
+                    messageDiv.style.display = 'block';
+                    targetSpan.textContent = result.description;
+                    setTimeout(() => {
+                        window.location.replace(result.url);
+                    }, delayMs);
                 }
             }
         };
@@ -305,10 +473,22 @@
 <body>
     <div class="container">
         <div id="redirectMessage" class="redirect-message">
-            Redirecting to <span id="redirectTarget"></span>...
+            <span id="redirectLabel">Redirecting to </span><span id="redirectTarget"></span>...
         </div>
         <div id="noMatchMessage" class="no-match-message">
-            Key Not Found <span id="noMatchTarget"></span>
+            Alias Not Found <span id="noMatchTarget"></span>
+        </div>
+        <div class="setup">
+            <h2>Use this as a Chrome search engine</h2>
+            <p>Search URL for this site (auto-detected):
+                <br><code class="setup-url" id="setupUrl"></code></p>
+            <button class="copy-btn" id="copyBtn" type="button">Copy search URL</button>
+            <span class="copy-status" id="copyStatus"></span>
+            <ol>
+                <li>Chrome may already list <strong id="setupName">this site</strong> under Settings &rarr; Search engines (auto-discovered). If so, just set its keyword.</li>
+                <li>Otherwise: Settings &rarr; Search engines &rarr; Manage &rarr; <strong>Add</strong>. Paste the copied URL into the "URL with %s" field, pick a name and a shortcut keyword (e.g. <code>@</code>).</li>
+                <li>Then type your keyword + <kbd>Tab</kbd> + an alias (e.g. <code>ha</code>) in the address bar.</li>
+            </ol>
         </div>
         <h1>Available Redirects</h1>
         <table>

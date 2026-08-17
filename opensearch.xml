@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- OpenSearch descriptor for Chrome/browser auto-discovery of the "zse" redirect search engine.
+     Referenced from index.htm via <link rel="search">. The template MUST be absolute, so this
+     file is host-specific: it targets zzafarr.github.io. Forks are handled at runtime instead —
+     index.htm regenerates this descriptor from window.location (buildOpenSearchXml), so a fork
+     works with zero edits to this file. Edit the template host below only if serving statically
+     from a different, known host.
+
+     NOTE: OpenSearch has no field for the address-bar shortcut/keyword — Chrome always makes the
+     user set that in Settings. The owner's intended keyword for this engine is "@". -->
+<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">
+  <ShortName>zse</ShortName>
+  <Description>zse redirect search engine</Description>
+  <InputEncoding>UTF-8</InputEncoding>
+  <Url type="text/html" method="get" template="https://zzafarr.github.io/zse/?alias={searchTerms}"/>
+</OpenSearchDescription>
