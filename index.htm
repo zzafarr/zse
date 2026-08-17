@@ -8,6 +8,57 @@
          ?alias=xxx) so the page shows without redirecting, then hard-reload (Ctrl+Shift+R). -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Redirect Links</title>
+</head>
+<body>
+    <!-- Alias data ("|"-delimited, one record per line; "# Title" = section header). Kept at the
+         top of <body> for easy editing; parsed at load by parseRedirects() so there is no extra
+         network request. Grammar: alias | url [| description [| raw]]. Whitespace around "|" is
+         optional (trimmed) and may be used for column alignment. URLs never contain "|", so no
+         escaping is ever needed. -->
+    <script type="text/plain" id="redirectData">
+# Shortcuts
+sf         | https://seekingalpha.com/account/portfolio/summary?portfolioId=65457843          | Seeking Alpha
+
+# Searches
+gm         | https://gemini.google.com/app                                                    | Gemini Web App
+
+# Home Assistant
+ha         | http://192.168.3.3:8123/                                                         | home assistant local
+hass       | http://192.168.3.3:8123/                                                         | home assistant local
+hal        | http://192.168.3.3:8123/                                                         | home assistant local
+har        | https://wqk88ecoaorww4r2ot9ecsl3fjole1tm.ui.nabu.casa/                           | home assistant Nabucasa
+nabu       | https://wqk88ecoaorww4r2ot9ecsl3fjole1tm.ui.nabu.casa/                           | home assistant Nabucasa
+
+# BlueIris
+bi         | http://192.168.2.2:81                                                            | Blue Iris - NVR
+bilan      | http://192.168.1.22:81                                                           | Blue Iris - NVR
+
+# Network
+unifi      | https://192.168.1.1/network/                                                     | Unifi Controller
+cbb        | https://nas:5800/                                                                | NAS Cloudberry Backup
+deluge     | http://nas:8112/                                                                 | NAS Deluge Tor
+
+# Tasks
+tt         | https://ticktick.com/webapp/#p/inbox/tasks                                       | Tick Tick
+todo       | https://to-do.live.com/tasks/important                                           | Microsoft To-Do
+zse        | https://github.com/zzafarr/zse/edit/main/index.htm                               | Zack Chrome Redirect Search Engine.
+
+# Cams
+frontodoor | http://192.168.2.201/doc/page/config.asp                                         | Front Door Camera
+driveway   | http://192.168.2.202/doc/page/config.asp                                         | Driveway Camera
+southgate  | http://192.168.2.203/                                                            | South gate Camera
+grill      | https://192.168.2.204/                                                           | Grill Camera
+patio      | http://192.168.2.205/doc/page/config.asp                                         | Patio Camera
+northgate  | http://192.168.2.206/                                                            | North Gate Camera
+garage     | https://192.168.2.210/#/quality                                                  | Garage Camera
+
+# Other
+amcredit   | https://www.amazon.com/norushcredits                                             | Amazon Credit
+ecobee     | https://app.beestat.io/                                                          | Ecobee stats
+rent       | https://www.zillow.com/rental-manager/properties/1ekexu75m5y5a/dashboard/overview | Zillow Rental
+cct        | https://anthropic.skilljar.com/claude-code-in-action                             | Claude Code Training
+fdm        | https://freedium-mirror.cfd/{argument}                                           | Freedium | raw
+</script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
@@ -81,57 +132,6 @@
         .copy-btn:hover { background: #1d4ed8; }
         .copy-status { color: #197d19; font-size: 0.9em; }
     </style>
-</head>
-<body>
-    <!-- Alias data ("|"-delimited, one record per line; "# Title" = section header). Kept at the
-         top of <body> for easy editing; parsed at load by parseRedirects() so there is no extra
-         network request. Grammar: alias | url [| description [| raw]]. Whitespace around "|" is
-         optional (trimmed) and may be used for column alignment. URLs never contain "|", so no
-         escaping is ever needed. -->
-    <script type="text/plain" id="redirectData">
-# Shortcuts
-sf         | https://seekingalpha.com/account/portfolio/summary?portfolioId=65457843          | Seeking Alpha
-
-# Searches
-gm         | https://gemini.google.com/app                                                    | Gemini Web App
-
-# Home Assistant
-ha         | http://192.168.3.3:8123/                                                         | home assistant local
-hass       | http://192.168.3.3:8123/                                                         | home assistant local
-hal        | http://192.168.3.3:8123/                                                         | home assistant local
-har        | https://wqk88ecoaorww4r2ot9ecsl3fjole1tm.ui.nabu.casa/                           | home assistant Nabucasa
-nabu       | https://wqk88ecoaorww4r2ot9ecsl3fjole1tm.ui.nabu.casa/                           | home assistant Nabucasa
-
-# BlueIris
-bi         | http://192.168.2.2:81                                                            | Blue Iris - NVR
-bilan      | http://192.168.1.22:81                                                           | Blue Iris - NVR
-
-# Network
-unifi      | https://192.168.1.1/network/                                                     | Unifi Controller
-cbb        | https://nas:5800/                                                                | NAS Cloudberry Backup
-deluge     | http://nas:8112/                                                                 | NAS Deluge Tor
-
-# Tasks
-tt         | https://ticktick.com/webapp/#p/inbox/tasks                                       | Tick Tick
-todo       | https://to-do.live.com/tasks/important                                           | Microsoft To-Do
-zse        | https://github.com/zzafarr/zse/edit/main/index.htm                               | Zack Chrome Redirect Search Engine.
-
-# Cams
-frontodoor | http://192.168.2.201/doc/page/config.asp                                         | Front Door Camera
-driveway   | http://192.168.2.202/doc/page/config.asp                                         | Driveway Camera
-southgate  | http://192.168.2.203/                                                            | South gate Camera
-grill      | https://192.168.2.204/                                                           | Grill Camera
-patio      | http://192.168.2.205/doc/page/config.asp                                         | Patio Camera
-northgate  | http://192.168.2.206/                                                            | North Gate Camera
-garage     | https://192.168.2.210/#/quality                                                  | Garage Camera
-
-# Other
-amcredit   | https://www.amazon.com/norushcredits                                             | Amazon Credit
-ecobee     | https://app.beestat.io/                                                          | Ecobee stats
-rent       | https://www.zillow.com/rental-manager/properties/1ekexu75m5y5a/dashboard/overview | Zillow Rental
-cct        | https://anthropic.skilljar.com/claude-code-in-action                             | Claude Code Training
-fdm        | https://freedium-mirror.cfd/{argument}                                           | Freedium | raw
-</script>
     <div class="container">
         <div id="redirectMessage" class="redirect-message">
             <span id="redirectLabel">Redirecting to </span><span id="redirectTarget"></span>...
