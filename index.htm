@@ -18,6 +18,7 @@
     <script type="text/plain" id="redirectData">
 # Shortcuts
 sf         | https://seekingalpha.com/account/portfolio/summary?portfolioId=65457843          | Seeking Alpha
+sf         | https://seekingalpha.com/symbol/{argument}                                       | Seeking Alpha | true
 
 # Searches
 gm         | https://gemini.google.com/app                                                    | Gemini Web App
@@ -94,6 +95,9 @@ fdm        | https://freedium-mirror.cfd/{argument}                             
         tr:hover {
             background-color: #f5f5f5;
         }
+        /* Rows whose (alias, variant) is defined twice with different URLs — a config error. */
+        .conflict-row td { background-color: #ffe0e0; color: #b00000; }
+        .conflict-row:hover { background-color: #ffd0d0; }
         .container {
             max-width: 1200px;
             margin: 0 auto;
@@ -159,45 +163,66 @@ fdm        | https://freedium-mirror.cfd/{argument}                             
         // Pure resolver: maps the raw ?alias= param value to a redirect descriptor.
         // No DOM/navigation side effects, so it is unit-testable (see tests/resolve.test.js).
         //
+        // `aliases` is parseRedirects(...).aliases — the per-alias variant map (NOT the row list).
+        //
         // Parsing: decode the value (Chrome's %s substitution may percent-encode spaces),
         // then split on the FIRST space only -> alias + optional argument. The argument may
         // itself contain spaces, '?', and '://' (e.g. a nested URL), so only the first space
         // delimits; everything after is the argument verbatim.
         //
-        // Argument substitution into the alias url's "{argument}" placeholder:
+        // Variant selection: an alias may define a "plain" variant (url without "{argument}") and/or
+        // an "arg" variant (url with "{argument}"). We pick the slot by whether an argument was typed:
+        //   - argument present -> prefer the "arg" slot; fall back to "plain" if no "arg" defined
+        //   - no argument      -> prefer the "plain" slot; fall back to "arg" if no "plain" defined
+        // The fall-back is what produces the orange "without argument" cases for single-variant aliases.
+        //
+        // Argument substitution into the "{argument}" placeholder:
         //   - default: encodeURIComponent(argument)  (search-style params)
         //   - entry.raw === true: insert argument verbatim  (path-style nested URLs, e.g. Freedium)
         //
         // Returns one of:
-        //   { status: "notfound", alias }                       -> red "Alias Not Found"
-        //   { status: "ok",       url, description }            -> green "Redirecting to <desc>"
-        //   { status: "noarg",    url, description }            -> orange "Redirecting without argument"
+        //   { status: "notfound", alias }                        -> red "Alias Not Found"
+        //   { status: "conflict", alias, slot, urls }            -> red config error (same-slot dup w/ diff urls)
+        //   { status: "ok",       url, description }             -> green "Redirecting to <desc>"
+        //   { status: "noarg",    url, description }             -> orange "Redirecting without argument"
         // Callers redirect (location.replace) for "ok"/"noarg": "ok" after 500ms, "noarg" after
-        // 1000ms (the longer delay makes the orange "without argument" warning noticeable).
+        // 1000ms (the longer delay makes the orange "without argument" warning noticeable). "conflict"
+        // and "notfound" never redirect.
         //
-        // The four argument/placeholder cases (hasPlaceholder x hasArgument):
+        // The four argument/placeholder cases (on the SELECTED variant; hasPlaceholder x hasArgument):
         //   1. no/no   -> ok,    url as-is
         //   2. yes/yes -> ok,    url with {argument} substituted
-        //   3. no/yes  -> noarg, url as-is (argument dropped)
-        //   4. yes/no  -> noarg, url with the {argument} token stripped
-        function resolveRedirect(redirects, aliasParam) {
+        //   3. no/yes  -> noarg, url as-is (argument dropped)          (single-variant fallback)
+        //   4. yes/no  -> noarg, url with the {argument} token stripped (single-variant fallback)
+        function resolveRedirect(aliases, aliasParam) {
             let decoded = aliasParam;
             try { decoded = decodeURIComponent(aliasParam); } catch (e) { /* keep raw if malformed */ }
 
             const spaceIdx = decoded.indexOf(" ");
             const aliasToken = spaceIdx === -1 ? decoded : decoded.slice(0, spaceIdx);
             const argument = spaceIdx === -1 ? null : decoded.slice(spaceIdx + 1);
+            const hasArgument = argument !== null;
 
-            const matchKey = Object.keys(redirects).find(
-                (k) => redirects[k].type !== "separator" && k.toLowerCase() === aliasToken.toLowerCase()
-            );
-            if (!matchKey) {
+            const bucket = aliases[aliasToken.toLowerCase()];
+            if (!bucket) {
                 return { status: "notfound", alias: aliasToken };
             }
 
-            const entry = redirects[matchKey];
+            // Pick the slot by argument presence, falling back to the other if the preferred is absent.
+            const preferred = hasArgument ? "arg" : "plain";
+            const fallback = hasArgument ? "plain" : "arg";
+            const slot = bucket.variants[preferred] ? preferred : (bucket.variants[fallback] ? fallback : preferred);
+
+            // A conflicting slot (same slot defined twice with different urls) never redirects.
+            if (bucket.conflict[slot]) {
+                return { status: "conflict", alias: bucket.display, slot: slot, urls: bucket.urls[slot].slice() };
+            }
+
+            const entry = bucket.variants[slot];
+            if (!entry) {                                          // alias exists but the picked slot is empty
+                return { status: "notfound", alias: aliasToken };
+            }
             const hasPlaceholder = entry.url.indexOf("{argument}") !== -1;
-            const hasArgument = argument !== null;
 
             if (hasPlaceholder && hasArgument) { // case 2
                 const value = entry.raw === true ? argument : encodeURIComponent(argument);
@@ -257,25 +282,43 @@ fdm        | https://freedium-mirror.cfd/{argument}                             
             return URL.createObjectURL(new Blob([xml], { type: "application/opensearchdescription+xml" }));
         }
 
-        // Parse the inline pipe-delimited redirect data (from the #redirectData block) into the
-        // `redirects` object the rest of the app uses. "|"-delimited (not comma) so URLs never need
-        // escaping — "|" doesn't appear in URLs. Insertion order is preserved (drives table + lookup).
+        // Parse the inline pipe-delimited redirect data (from the #redirectData block). "|"-delimited
+        // (not comma) so URLs never need escaping — "|" doesn't appear in URLs. Insertion order is
+        // preserved (drives the table). Returns { rows, aliases }:
+        //   rows    : ordered list of every authored row, verbatim, for rendering the table.
+        //             { type: "separator", title } | { type: "entry", alias, url, description, raw }
+        //   aliases : the RESOLUTION map, keyed by lowercased alias -> variant container:
+        //             { display, variants: { plain?, arg? }, conflict: { plain, arg }, urls: { plain:[], arg:[] } }
         //
-        // Line grammar (whitespace around each "|" is optional — trimmed away, so it can be used for
-        // column alignment; blank lines ignored):
-        //   "# Section Title"                          -> separator row { type: "separator" } (key = title)
-        //   "alias | url [| description [| raw]]"       -> { url, description, raw? }
+        // Two variants per alias, discriminated by whether the url contains "{argument}":
+        //   - "plain": no "{argument}" -> used when you pass NO argument (e.g. "sf")
+        //   - "arg"  : has "{argument}" -> used when you PASS an argument (e.g. "sf MSFT")
+        // So one alias can hold BOTH (e.g. sf -> portfolio when bare, /symbol/{argument} when given a
+        // ticker). Resolution keys on (alias, slot), not alias alone.
+        //
+        // Dedup/conflict are keyed on URL ONLY (description ignored), per slot:
+        //   - same alias, same slot, SAME url  -> duplicate: ignored at resolve time (first wins,
+        //                                          first row's description kept). Still shown in the table.
+        //   - same alias, same slot, DIFFERENT url -> conflict: that slot resolves to a red config
+        //                                          error naming the clashing urls; the OTHER slot (if
+        //                                          non-conflicting) still works.
+        //
+        // Line grammar (whitespace around each "|" is optional — trimmed, so it can align columns;
+        // blank lines ignored):
+        //   "# Section Title"                     -> separator row (title used as the header text)
+        //   "alias | url [| description [| raw]]" -> entry row
         // The 4th field, if present and equal to "raw" or "true" (case-insensitive), sets raw:true
         // (argument inserted verbatim). Missing description defaults to the alias. A record line with
-        // no "|" (alias only, no url) is skipped as malformed rather than creating a url-less entry.
+        // no "|" (alias only, no url) is skipped as malformed.
         function parseRedirects(text) {
-            const redirects = {};
+            const rows = [];
+            const aliases = {};
             const lines = text.split("\n");
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i];
                 if (line.trim() === "") { continue; }              // blank -> skip
                 if (line.trim().charAt(0) === "#") {                // "# Title" -> separator
-                    redirects[line.trim().slice(1).trim()] = { type: "separator" };
+                    rows.push({ type: "separator", title: line.trim().slice(1).trim() });
                     continue;
                 }
                 const fields = line.split("|").map((f) => f.trim());  // optional whitespace around | is trimmed
@@ -285,23 +328,42 @@ fdm        | https://freedium-mirror.cfd/{argument}                             
                 const entry = { url: url, description: fields[2] || alias };
                 const rawFlag = (fields[3] || "").toLowerCase();
                 if (rawFlag === "raw" || rawFlag === "true") { entry.raw = true; }
-                redirects[alias] = entry;
+                rows.push({ type: "entry", alias: alias, url: url, description: entry.description, raw: entry.raw === true });
+
+                // Fold into the resolution map. Slot = "arg" if url has {argument}, else "plain".
+                const key = alias.toLowerCase();
+                const slot = url.indexOf("{argument}") !== -1 ? "arg" : "plain";
+                if (!aliases[key]) {
+                    aliases[key] = { display: alias, variants: {}, conflict: { plain: false, arg: false }, urls: { plain: [], arg: [] } };
+                }
+                const bucket = aliases[key];
+                if (bucket.urls[slot].indexOf(url) === -1) { bucket.urls[slot].push(url); }
+                if (!bucket.variants[slot]) {
+                    bucket.variants[slot] = entry;                 // first row for this slot wins (its description)
+                } else if (bucket.variants[slot].url !== url) {
+                    bucket.conflict[slot] = true;                  // different url, same slot -> conflict
+                }
+                // else: identical url, same slot -> duplicate, ignored (first already stored)
             }
-            return redirects;
+            return { rows: rows, aliases: aliases };
         }
 
         if (typeof module !== "undefined" && module.exports) {
             module.exports = { resolveRedirect, buildSearchUrl, buildOpenSearchXml, opensearchStrategy, parseRedirects };
         }
 
-        // Aliases live in the inline #redirectData block at the top of <body> ("|"-delimited, easy
+        // Aliases live in the inline #redirectData block near the top of <body> ("|"-delimited, easy
         // to hand-edit). Parsed once at load; no extra network request, so caching/perf are unchanged.
-        let redirects = {};
+        // `rows` = ordered rows for the table; `aliases` = the resolution map (see parseRedirects).
+        let rows = [];
+        let aliases = {};
 
         window.onload = function () {
-            // Load aliases from the inline "|"-delimited block (top of <body>).
+            // Load aliases from the inline "|"-delimited block (near the top of <body>).
             const dataEl = document.getElementById('redirectData');
-            redirects = parseRedirects(dataEl ? dataEl.textContent : "");
+            const parsed = parseRedirects(dataEl ? dataEl.textContent : "");
+            rows = parsed.rows;
+            aliases = parsed.aliases;
 
             // --- Setup panel: auto-detect this deployment's host so forks work with zero config ---
             const engineName = "zse";
@@ -341,57 +403,59 @@ fdm        | https://freedium-mirror.cfd/{argument}                             
 
             const tableBody = document.getElementById('redirectsTable');
 
-            // Use the keys in their original order
-            const keys = Object.keys(redirects);
-            
-            // Create table rows
-            keys.forEach(key => {
-                const redirect = redirects[key];
-                
-                if (redirect.type === "separator") {
+            // Render every authored row in order (including exact duplicates — they're shown as-is and
+            // only ignored at resolve time). A row whose (alias, slot) is in conflict (same slot defined
+            // twice with different urls) is highlighted red so config errors are visible while editing.
+            rows.forEach(rowData => {
+                if (rowData.type === "separator") {
                     // Create separator row
                     const separatorRow = document.createElement('tr');
                     separatorRow.className = 'separator-row';
-                    
+
                     const separatorCell = document.createElement('td');
                     separatorCell.colSpan = 2;
-                    separatorCell.textContent = key;
+                    separatorCell.textContent = rowData.title;
                     separatorCell.style.fontWeight = 'bold';
                     separatorCell.style.padding = '8px';
                     separatorCell.style.backgroundColor = '#f5f5f5';
                     separatorCell.style.borderTop = '2px solid #ddd';
                     separatorCell.style.borderBottom = '2px solid #ddd';
-                    
+
                     separatorRow.appendChild(separatorCell);
                     tableBody.appendChild(separatorRow);
                 } else {
                     // Create regular row
                     const row = document.createElement('tr');
-                    
+
+                    // Flag conflicted rows red: look up this row's slot in the resolution map.
+                    const bucket = aliases[rowData.alias.toLowerCase()];
+                    const slot = rowData.url.indexOf("{argument}") !== -1 ? "arg" : "plain";
+                    if (bucket && bucket.conflict[slot]) { row.className = 'conflict-row'; }
+
                     // Key column
                     const keyCell = document.createElement('td');
-                    keyCell.textContent = key;
+                    keyCell.textContent = rowData.alias;
                     row.appendChild(keyCell);
-                    
+
                     // URL and Description column
                     const urlCell = document.createElement('td');
-                    
+
                     // Add description first
                     const descSpan = document.createElement('span');
-                    descSpan.textContent = redirect.description;
+                    descSpan.textContent = rowData.description;
                     descSpan.style.color = '#666';
                     descSpan.style.fontSize = '0.9em';
                     urlCell.appendChild(descSpan);
-                    
+
                     // Add line break and link
                     urlCell.appendChild(document.createElement('br'));
                     const link = document.createElement('a');
-                    link.href = redirect.url;
-                    link.textContent = redirect.url;
+                    link.href = rowData.url;
+                    link.textContent = rowData.url;
                     link.target = '_blank'; // Open in new tab
                     link.style.fontSize = '0.85em';
                     urlCell.appendChild(link);
-                    
+
                     row.appendChild(urlCell);
                     tableBody.appendChild(row);
                 }
@@ -399,19 +463,32 @@ fdm        | https://freedium-mirror.cfd/{argument}                             
 
             // Check if there's a redirect request.
             // Prefer ?alias=; fall back to the legacy ?key= param for backward compatibility with
-            // bookmarks/engines set up before the rename.
+            // bookmarks/engines set up before the rename. "||" (not "??") so an EMPTY ?alias= (e.g.
+            // "?alias=&key=ha") still falls through to ?key= — an empty string is treated as absent.
             // TODO: remove the ?key= fallback once no legacy links remain.
             const params = new URLSearchParams(window.location.search);
-            const aliasParam = params.get("alias") ?? params.get("key");
+            const aliasParam = params.get("alias") || params.get("key");
 
             if (aliasParam) {
-                const result = resolveRedirect(redirects, aliasParam);
+                const result = resolveRedirect(aliases, aliasParam);
 
                 if (result.status === "notfound") {
                     const noMatchMessageDiv = document.getElementById('noMatchMessage');
                     const noMatchTargetSpan = document.getElementById('noMatchTarget');
                     noMatchMessageDiv.style.display = 'block';
                     noMatchTargetSpan.textContent = result.alias;
+                } else if (result.status === "conflict") {
+                    // Same-slot duplicate with different urls: never redirect. Show a red config error
+                    // in place of the "Redirecting…" box, naming the clashing urls so it's fixable.
+                    // Safe to overwrite textContent (drops the #noMatchTarget child span): exactly one
+                    // status is handled per page load, so the notfound branch (which needs that span)
+                    // never runs in the same load. Don't render two statuses into this div at once.
+                    const noMatchMessageDiv = document.getElementById('noMatchMessage');
+                    noMatchMessageDiv.style.display = 'block';
+                    const variant = result.slot === "arg" ? "with argument" : "without argument";
+                    noMatchMessageDiv.textContent =
+                        'Config error: alias "' + result.alias + '" (' + variant + ') maps to '
+                        + result.urls.length + ' different URLs: ' + result.urls.join("  —  ");
                 } else {
                     // "ok" -> green box, fast 500ms redirect; "noarg" -> same box restyled orange
                     // with "without argument" wording, and a longer 1000ms delay so the warning is

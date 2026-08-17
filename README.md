@@ -2,7 +2,7 @@
 
 Turn short aliases you type in the browser address bar into full URLs. `zse` is a single static HTML file (`index.htm`) hosted on GitHub Pages — no backend, no build, no dependencies.
 
-Type `@`⇥`ha` → land on your Home Assistant. Type `@`⇥`fdm https://medium.com/...` → land on the Freedium version of that article.
+Type `@`⇥`ha` → land on your Home Assistant. Type `@`⇥`fdm https://medium.com/...` → land on the Freedium version of that article. An alias can even do **two things** — `@`⇥`sf` opens your Seeking Alpha portfolio, `@`⇥`sf MSFT` jumps to the MSFT symbol page.
 
 ## How it works
 
@@ -44,6 +44,7 @@ alias | url [| description [| raw]]
 - **Fields are separated by `|`.** `|` never appears in URLs, so you never have to quote or escape anything (unlike CSV with commas).
 - **Whitespace around `|` is optional** — it's trimmed, so `ha | url` and `ha|url` are equivalent. Pad it out to align columns if you like.
 - **Description** is optional (defaults to the alias). **4th field `raw`** (or `true`) inserts the argument verbatim — see below.
+- **An alias may appear twice** — one row *without* `{argument}` and one *with* — to give it two behaviors (see [Two behaviors for one alias](#two-behaviors-for-one-alias)).
 - Blank lines are ignored.
 
 Example (whitespace around `|` is just for readability):
@@ -67,7 +68,26 @@ Type an alias, a space, then an argument: `@`⇥`g cute cats`.
 - `{argument}` in the `url` is where the argument goes.
 - By default the argument is URL-**encoded** (`cute cats` → `cute%20cats`). Add **`raw: true`** to insert it verbatim — needed for path-style nested URLs like Freedium.
 
-### The four cases
+### Two behaviors for one alias
+
+Define the **same alias twice** — once without `{argument}`, once with — and it does the right thing based on whether you pass an argument:
+
+```
+sf | https://seekingalpha.com/account/portfolio/summary?portfolioId=65457843 | Seeking Alpha
+sf | https://seekingalpha.com/symbol/{argument}                              | Seeking Alpha | true
+```
+
+- `@`⇥`sf` → the portfolio (the row **without** `{argument}`).
+- `@`⇥`sf MSFT` → `https://seekingalpha.com/symbol/MSFT` (the row **with** `{argument}`).
+
+Rules:
+- An alias can have at most **two** rows: one *plain* (no `{argument}`) and one *arg* (has `{argument}`). The one used is picked by whether you typed an argument.
+- **Exact duplicate** (same alias, same "slot", **same URL**) → the extra is ignored at redirect time (first one wins). It still shows in the table.
+- **Conflict** (same alias, same slot, **different URLs**) → that alias won't redirect; you get a **red config error** naming the two URLs, and the offending rows are highlighted red in the table. A conflict in one slot doesn't break the other slot.
+
+### The four cases (single-variant alias)
+
+For an alias with just **one** row, the redirect and notice depend on `{argument}` vs. what you typed:
 
 | Alias URL has `{argument}`? | You passed an argument? | Result | Notice |
 |---|---|---|---|
@@ -76,7 +96,9 @@ Type an alias, a space, then an argument: `@`⇥`g cute cats`.
 | No | Yes | redirect anyway, argument ignored | **orange** "without argument" |
 | Yes | No | redirect with `{argument}` stripped out | **orange** "without argument" |
 
-Unknown alias → red "Alias Not Found".
+A **two-variant** alias (both rows defined) never goes orange — each way of typing it has a matching row.
+
+Unknown alias → red "Alias Not Found". Conflicting alias → red config error.
 
 ## Caching & refresh
 
@@ -94,7 +116,7 @@ The page is tiny and static, so it caches well. A few realities on **GitHub Page
 
 ## Tests
 
-Pure logic (`resolveRedirect`, `parseRedirects`, `buildSearchUrl`, `buildOpenSearchXml`, `opensearchStrategy`) is unit-tested — including that the real inline `#redirectData` block parses correctly and resolves end-to-end. The tests extract the functions straight from `index.htm`, so there's no separate copy to drift.
+Pure logic (`resolveRedirect`, `parseRedirects`, `buildSearchUrl`, `buildOpenSearchXml`, `opensearchStrategy`) is unit-tested — including two-variant aliases (plain/arg selection), duplicate dedup, same-slot conflicts, and that the real inline `#redirectData` block parses correctly and resolves end-to-end. The tests extract the functions straight from `index.htm`, so there's no separate copy to drift.
 
 ```
 node tests/resolve.test.js
