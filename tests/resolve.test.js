@@ -48,35 +48,35 @@ const fixture = aliasesFrom([
 
 // Case 1: no placeholder, no argument -> ok, url as-is
 eq(resolveRedirect(fixture, "ha"),
-   { status: "ok", url: "http://192.168.3.3:8123/", description: "home assistant local" },
+   { status: "ok", url: "http://192.168.3.3:8123/", description: "home assistant local", notes: "" },
    "case1: plain alias, no arg");
 
 // Case 2 (raw): placeholder + arg, raw:true -> verbatim nested URL (Freedium)
 eq(resolveRedirect(fixture, "fdm https://medium.com/@x/post"),
-   { status: "ok", url: "https://freedium-mirror.cfd/https://medium.com/@x/post", description: "Freedium" },
+   { status: "ok", url: "https://freedium-mirror.cfd/https://medium.com/@x/post", description: "Freedium", notes: "" },
    "case2 raw: fdm with nested URL argument");
 
 // Case 2 (encoded): placeholder + arg, default -> encodeURIComponent
 eq(resolveRedirect(fixture, "g cute cats"),
-   { status: "ok", url: "https://www.google.com/search?q=cute%20cats", description: "Google search" },
+   { status: "ok", url: "https://www.google.com/search?q=cute%20cats", description: "Google search", notes: "" },
    "case2 encoded: google search encodes spaces");
 
 // Case 2: argument itself may contain spaces and '?' — only the FIRST space splits
 eq(resolveRedirect(fixture, "g a b?c d"),
-   { status: "ok", url: "https://www.google.com/search?q=a%20b%3Fc%20d", description: "Google search" },
+   { status: "ok", url: "https://www.google.com/search?q=a%20b%3Fc%20d", description: "Google search", notes: "" },
    "case2: first-space split keeps rest of argument (incl. '?') intact");
 
 // Case 3: no placeholder + arg -> noarg, argument dropped, url unchanged (single-variant fallback)
 eq(resolveRedirect(fixture, "ha extra stuff"),
-   { status: "noarg", url: "http://192.168.3.3:8123/", description: "home assistant local" },
+   { status: "noarg", url: "http://192.168.3.3:8123/", description: "home assistant local", notes: "" },
    "case3: arg passed to placeholder-less single-variant alias is dropped (orange)");
 
 // Case 4: placeholder + no arg -> noarg, token stripped, rest intact (single-variant fallback)
 eq(resolveRedirect(fixture, "fdm"),
-   { status: "noarg", url: "https://freedium-mirror.cfd/", description: "Freedium" },
+   { status: "noarg", url: "https://freedium-mirror.cfd/", description: "Freedium", notes: "" },
    "case4: placeholder-only alias with no arg strips {argument} (orange)");
 eq(resolveRedirect(fixture, "mid"),
-   { status: "noarg", url: "https://x.test//end", description: "mid placeholder" },
+   { status: "noarg", url: "https://x.test//end", description: "mid placeholder", notes: "" },
    "case4: mid-URL placeholder stripped, surrounding text preserved");
 
 // Unknown alias -> red
@@ -86,7 +86,7 @@ eq(resolveRedirect(fixture, "zzz"),
 
 // Case-insensitive alias match
 eq(resolveRedirect(fixture, "HA"),
-   { status: "ok", url: "http://192.168.3.3:8123/", description: "home assistant local" },
+   { status: "ok", url: "http://192.168.3.3:8123/", description: "home assistant local", notes: "" },
    "alias match is case-insensitive");
 
 // Section headers are never matchable aliases (they're not in the aliases map at all)
@@ -96,12 +96,12 @@ eq(resolveRedirect(fixture, "Section"),
 
 // Chrome %s may percent-encode the whole value (space -> %20); decode before splitting
 eq(resolveRedirect(fixture, "g%20hello"),
-   { status: "ok", url: "https://www.google.com/search?q=hello", description: "Google search" },
+   { status: "ok", url: "https://www.google.com/search?q=hello", description: "Google search", notes: "" },
    "percent-encoded space from Chrome is decoded before first-space split");
 
 // Empty argument (trailing space) counts as an argument present -> encoded empty string
 eq(resolveRedirect(fixture, "g "),
-   { status: "ok", url: "https://www.google.com/search?q=", description: "Google search" },
+   { status: "ok", url: "https://www.google.com/search?q=", description: "Google search", notes: "" },
    "trailing space = empty argument present (case 2, empty value)");
 
 // --- Two variants per alias: plain (no {argument}) + arg (has {argument}), keyed on (alias, slot) ---
@@ -111,10 +111,10 @@ const sf = aliasesFrom([
     "sf | https://seekingalpha.com/symbol/{argument}                              | Seeking Alpha | true"
 ].join("\n"));
 eq(resolveRedirect(sf, "sf"),
-   { status: "ok", url: "https://seekingalpha.com/account/portfolio/summary?portfolioId=65457843", description: "Seeking Alpha" },
+   { status: "ok", url: "https://seekingalpha.com/account/portfolio/summary?portfolioId=65457843", description: "Seeking Alpha", notes: "" },
    "variants: bare 'sf' -> plain variant (portfolio), green");
 eq(resolveRedirect(sf, "sf MSFT"),
-   { status: "ok", url: "https://seekingalpha.com/symbol/MSFT", description: "Seeking Alpha" },
+   { status: "ok", url: "https://seekingalpha.com/symbol/MSFT", description: "Seeking Alpha", notes: "" },
    "variants: 'sf MSFT' -> arg variant (/symbol/MSFT), green (raw:true so no encoding)");
 // Two-variant aliases never go orange — each usage has its own matching slot.
 assert(resolveRedirect(sf, "sf").status === "ok" && resolveRedirect(sf, "sf X").status === "ok",
@@ -137,7 +137,7 @@ const dup = aliasesFrom([
     "d | https://d.test/ | Second"          // exact-URL dup -> ignored; 'First' description kept
 ].join("\n"));
 eq(resolveRedirect(dup, "d"),
-   { status: "ok", url: "https://d.test/", description: "First" },
+   { status: "ok", url: "https://d.test/", description: "First", notes: "" },
    "dedup: exact-URL dup ignored, first description wins");
 
 // --- Conflict: same alias, same slot, DIFFERENT urls -> red config error, never redirects ---
@@ -158,7 +158,7 @@ const mixed = aliasesFrom([
 eq(resolveRedirect(mixed, "m").status, "conflict",
    "conflict per-slot: bare 'm' hits the conflicted plain slot -> conflict");
 eq(resolveRedirect(mixed, "m QQQ"),
-   { status: "ok", url: "https://m.test/QQQ", description: "M" },
+   { status: "ok", url: "https://m.test/QQQ", description: "M", notes: "" },
    "conflict per-slot: 'm QQQ' hits the valid arg slot -> still works");
 
 // --- buildSearchUrl: auto-detect host + append ?alias=<placeholder> ---
@@ -235,13 +235,13 @@ eq(parsed.rows.map(r => r.type === "separator" ? "#" + r.title : r.alias),
    ["#Home Assistant", "ha", "#Other", "fdm", "noDesc", "#Spaced Title", "spacey"],
    "parseRedirects.rows: order preserved, headers as #title, 'bad' skipped");
 eq(parsed.rows.find(r => r.alias === "ha"),
-   { type: "entry", alias: "ha", url: "http://192.168.3.3:8123/", description: "home assistant local", raw: false },
+   { type: "entry", alias: "ha", url: "http://192.168.3.3:8123/", description: "home assistant local", raw: false, notes: "" },
    "parseRedirects.rows: basic entry row shape");
 eq(parsed.rows.find(r => r.alias === "fdm").raw, true, "parseRedirects.rows: raw flag on row");
 eq(parsed.rows.find(r => r.alias === "noDesc").description, "noDesc",
    "parseRedirects.rows: missing description defaults to alias");
 eq(parsed.rows.find(r => r.alias === "spacey"),
-   { type: "entry", alias: "spacey", url: "https://y.test/", description: "Y", raw: false },
+   { type: "entry", alias: "spacey", url: "https://y.test/", description: "Y", raw: false, notes: "" },
    "parseRedirects.rows: whitespace around | trimmed");
 
 // aliases: resolution map, lowercased keys, no separators.
@@ -286,7 +286,7 @@ eq(commaList.rows.map(r => r.type === "separator" ? "#" + r.title : r.alias),
 eq(Object.keys(commaList.aliases).sort(), ["ha", "hal", "hass"],
    "comma-list: each alias folded into the resolution map");
 eq(resolveRedirect(commaList.aliases, "hass"),
-   { status: "ok", url: "http://192.168.3.3:8123/", description: "HA local" },
+   { status: "ok", url: "http://192.168.3.3:8123/", description: "HA local", notes: "" },
    "comma-list: any listed alias resolves to the shared url");
 // Missing description defaults to the FIRST alias in the list.
 eq(parseRedirects("ha,hass | http://x/").rows[0].description, "ha",
@@ -306,7 +306,7 @@ const commaRaw = parseRedirects("a,b | https://freedium.cfd/{argument} | Freediu
 assert(commaRaw.aliases["a"].variants.arg.raw === true && commaRaw.aliases["b"].variants.arg.raw === true,
    "comma-list: raw:true applies to all aliases in the list");
 eq(resolveRedirect(commaRaw.aliases, "b https://m.com/p"),
-   { status: "ok", url: "https://freedium.cfd/https://m.com/p", description: "Freedium" },
+   { status: "ok", url: "https://freedium.cfd/https://m.com/p", description: "Freedium", notes: "" },
    "comma-list: {argument}+raw substitution works for a non-first listed alias");
 // Conflict still fires: a comma-listed alias clashing elsewhere (same slot, diff url) is a config
 // error, EXACTLY as if both rows were authored separately (comma expansion adds no new rules).
@@ -319,12 +319,62 @@ assert(!commaDup.aliases["hass"].conflict.plain, "comma-list: same-url dup is no
 eq(commaDup.aliases["hass"].variants.plain.description, "First",
    "comma-list: first row's description wins on same-url dup");
 
+// --- Notes: the optional 5th "|"-delimited field (alias | url | desc | raw | notes) ---
+// parseRedirects: notes land on the row and (when non-empty) on the resolved variant.
+const notesParsed = parseRedirects([
+    "n1 | https://n1.test/           | N1 | | just a note",   // empty raw field, notes present
+    "n2 | https://n2.test/{argument} | N2 | raw | arg note",  // raw + notes
+    "n3 | https://n3.test/           | N3"                     // no notes -> ""
+].join("\n"));
+eq(notesParsed.rows.find(r => r.alias === "n1"),
+   { type: "entry", alias: "n1", url: "https://n1.test/", description: "N1", raw: false, notes: "just a note" },
+   "notes: row carries notes with empty raw field (alias|url|desc||note)");
+eq(notesParsed.rows.find(r => r.alias === "n2").notes, "arg note",
+   "notes: raw flag and notes coexist (4th=raw, 5th=notes)");
+eq(notesParsed.aliases["n2"].variants.arg.raw, true, "notes: raw still set alongside notes");
+eq(notesParsed.aliases["n1"].variants.plain.notes, "just a note",
+   "notes: non-empty notes stored on the resolved variant");
+eq(notesParsed.rows.find(r => r.alias === "n3").notes, "", "notes: omitted 5th field -> empty string on row");
+assert(!("notes" in notesParsed.aliases["n3"].variants.plain),
+   "notes: empty notes NOT added to variant (clean-alias shape unchanged)");
+
+// Notes is the LAST field, so it may contain "|" — rejoined (not truncated) so no escaping is needed.
+eq(parseRedirects("p | http://p/ | P | | use A|B or C").rows[0].notes, "use A | B or C",
+   "notes: interior '|' in the note is kept (rejoined, single-space padded), not truncated");
+eq(parseRedirects("p | http://p/ | P | raw | a|b|c").rows[0].notes, "a | b | c",
+   "notes: multiple interior '|' all rejoined after the raw field");
+// A whitespace-only notes field collapses to "" (fields are trimmed) -> treated as no notes.
+eq(parseRedirects("w | http://w/ | W | |    ").rows[0].notes, "",
+   "notes: whitespace-only notes field trims to '' (no notes)");
+
+// resolveRedirect surfaces the resolved variant's notes ("" when none), on ok and noarg.
+eq(resolveRedirect(notesParsed.aliases, "n1").notes, "just a note",
+   "notes: resolver returns notes on a green (ok) redirect");
+eq(resolveRedirect(notesParsed.aliases, "n2").notes, "arg note",
+   "notes: resolver returns notes on a case-4 (noarg) redirect (n2 has {argument}, no arg passed)");
+eq(resolveRedirect(notesParsed.aliases, "n3").notes, "",
+   "notes: resolver returns '' when the alias has no notes");
+
+// groupRowsForDisplay: notes are part of the merge key — rows differing ONLY in notes stay separate,
+// and matching notes still merge. Notes are carried onto the group.
+const notesMerge = parseRedirects("# S\na | http://z/ | Z | | note A\nb | http://z/ | Z | | note B");
+eq(groupRowsForDisplay(notesMerge.rows, notesMerge.aliases).filter(g => g.type === "entry").map(g => g.aliases),
+   [["a"], ["b"]],
+   "notes: same url+desc but DIFFERENT notes -> not merged (notes in merge key)");
+const notesSame = parseRedirects("# S\na | http://z/ | Z | | same note\nb | http://z/ | Z | | same note");
+const notesSameGroup = groupRowsForDisplay(notesSame.rows, notesSame.aliases).find(g => g.type === "entry");
+eq(notesSameGroup.aliases, ["a", "b"], "notes: identical url+desc+notes still merge");
+eq(notesSameGroup.notes, "same note", "notes: merged group carries the shared notes");
+// A group with no notes carries notes:"" so the render loop skips the notes sub-row.
+eq(groupRowsForDisplay(parseRedirects("a | http://z/ | Z").rows, {}).find(g => g.type === "entry").notes, "",
+   "notes: group with no notes carries '' (render skips the sub-row)");
+
 // --- groupRowsForDisplay: collapse rows sharing url+desc within a section into one display row ---
 // Comma-authored OR separate-line duplicates both collapse to a single row with joined aliases.
 const gp = parseRedirects("# HA\nha,hass,hal | http://ha/ | HA local");
 eq(groupRowsForDisplay(gp.rows, gp.aliases),
    [{ type: "separator", title: "HA" },
-    { type: "entry", aliases: ["ha", "hass", "hal"], url: "http://ha/", description: "HA local", raw: false, conflict: false }],
+    { type: "entry", aliases: ["ha", "hass", "hal"], url: "http://ha/", description: "HA local", raw: false, notes: "", conflict: false }],
    "grouping: comma-list collapses to one row with joined aliases");
 // Separate authored lines with identical url+desc also merge (auto-merge, not only comma-authored).
 const gpSep = parseRedirects("# HA\nha | http://ha/ | HA local\nhass | http://ha/ | HA local\nhal | http://ha/ | HA local");
@@ -354,8 +404,8 @@ eq(groupRowsForDisplay(gpGap.rows, gpGap.aliases).filter(g => g.type === "entry"
 // Conflicted rows are NEVER merged — each stays its own red single-alias group.
 const gpConflict = parseRedirects("c | http://a/ | C\nc | http://b/ | C");
 eq(groupRowsForDisplay(gpConflict.rows, gpConflict.aliases),
-   [{ type: "entry", aliases: ["c"], url: "http://a/", description: "C", raw: false, conflict: true },
-    { type: "entry", aliases: ["c"], url: "http://b/", description: "C", raw: false, conflict: true }],
+   [{ type: "entry", aliases: ["c"], url: "http://a/", description: "C", raw: false, notes: "", conflict: true },
+    { type: "entry", aliases: ["c"], url: "http://b/", description: "C", raw: false, notes: "", conflict: true }],
    "grouping: conflicted rows stay separate single-alias red groups (not merged)");
 
 // --- The real inline #redirectData block parses and matches the shipping map's expectations ---
@@ -368,18 +418,28 @@ eq(live.aliases["ha"].variants.plain.url, "http://192.168.3.3:8123/", "live data
 assert(live.rows.some(r => r.type === "separator"), "live data: section headers present in rows");
 // Resolver works end-to-end against the real parsed data (raw arg substitution).
 eq(resolveRedirect(live.aliases, "fdm https://medium.com/@x/post"),
-   { status: "ok", url: "https://freedium-mirror.cfd/https://medium.com/@x/post", description: "Freedium" },
+   { status: "ok", url: "https://freedium-mirror.cfd/https://medium.com/@x/post", description: "Freedium", notes: "" },
    "live data + resolver: fdm raw substitution end-to-end");
 // Every expected alias from today's config is present.
 ["sf","gm","ha","hass","hal","har","nabu","bi","bilan","unifi","cbb","deluge","tt","todo","zse",
- "frontodoor","driveway","southgate","grill","patio","northgate","garage","amcredit","ecobee","rent","cct","fdm"
+ "frontdoor","driveway","southgate","grill","patio","northgate","garage","amcredit","ecobee","rent","cct","fdm"
 ].forEach((a) => assert(a in live.aliases, "live data: alias '" + a + "' present"));
 // The comma-collapsed HA aliases render as single merged display rows (feature working on real data).
 const liveGroups = groupRowsForDisplay(live.rows, live.aliases);
-assert(liveGroups.some(g => g.type === "entry" && g.aliases.join(",") === "ha,hass,hal"),
-   "live data: ha/hass/hal collapse into one display row");
+const liveHa = liveGroups.find(g => g.type === "entry" && g.aliases.join(",") === "ha,hass,hal");
+assert(!!liveHa, "live data: ha/hass/hal collapse into one display row");
 assert(liveGroups.some(g => g.type === "entry" && g.aliases.join(",") === "har,nabu"),
    "live data: har/nabu collapse into one display row");
+// Notes on real data: the ha comma-list shares its note across all aliases and onto the merged group;
+// the sf arg-variant carries its note and the resolver surfaces it when a ticker is passed.
+eq(liveHa.notes, "remember to update the device list every time",
+   "live data: ha comma-list note carried onto the merged display group");
+eq(resolveRedirect(live.aliases, "ha").notes, "remember to update the device list every time",
+   "live data: bare 'ha' surfaces its note (shared across the comma-list)");
+eq(resolveRedirect(live.aliases, "sf MSFT").notes, "Some special description for me to read in the table view",
+   "live data: 'sf <ticker>' arg-variant surfaces its note");
+eq(resolveRedirect(live.aliases, "sf").notes, "",
+   "live data: bare 'sf' plain-variant has no note");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
